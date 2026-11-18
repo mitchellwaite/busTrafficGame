@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createGame, tap, useVip, laneCheck, vipAvailable, expire } from '../src/sim.js'
+import { createGame, tap, useVip, unlockSpot, fillParked, laneCheck, vipAvailable, unlockAvailable, fillAvailable, expire } from '../src/sim.js'
 import { SPOTS } from '../src/config.js'
 
 // Rules tests: any seat count, and every bus is 1 unit long so the geometry stays simple.
@@ -8,8 +8,8 @@ const bus = (color, x, y, a = 0, size = 10) => ({ color, size, length: 1, x, y, 
 const rep = (color, k) => Array(k).fill(color)
 // 1-unit buses side by side along the top, facing up, never block each other.
 const row = (colors) => colors.map((c, i) => bus(c, i + 0.5, 0.5))
-const make = (buses, queue, { w = 8, h = 4, loopCapacity = 50 } = {}) =>
-  createGame({ level: 0, lot: { w, h }, buses: buses.map((b, id) => ({ id, ...b })), queue, loopCapacity, spots: [...SPOTS], solution: [] })
+const make = (buses, queue, { w = 8, h = 4, loopCapacity = 50, spots = SPOTS } = {}) =>
+  createGame({ level: 0, lot: { w, h }, buses: buses.map((b, id) => ({ id, ...b })), queue, loopCapacity, spots: [...spots], solution: [] })
 const types = (events) => events.map((e) => e.type)
 const runs = (events) => types(events).reduce((acc, t) => (acc.at(-1)?.[0] === t ? acc.at(-1)[1]++ : acc.push([t, 1]), acc), [])
 
@@ -112,8 +112,8 @@ test('VIP cannot be used while its spot is occupied', () => {
 })
 
 // Six buses colours 0..5; the loop (10) fills with colour 5, so buses 0..3 just wait.
-const stuckGame = (queue = [...rep(5, 10), ...[0, 1, 2, 3, 4].flatMap((c) => rep(c, 10))]) => {
-  const { game } = make(row([0, 1, 2, 3, 4, 5, 6].slice(0, new Set(queue).size)), queue, { loopCapacity: 10 })
+const stuckGame = (queue = [...rep(5, 10), ...[0, 1, 2, 3, 4].flatMap((c) => rep(c, 10))], spots = SPOTS) => {
+  const { game } = make(row([0, 1, 2, 3, 4, 5, 6].slice(0, new Set(queue).size)), queue, { loopCapacity: 10, spots })
   ;[0, 1, 2].forEach((id) => tap(game, id))
   return { game, ev: tap(game, 3) }
 }
@@ -140,15 +140,34 @@ test('using VIP while stuck that leaves it stuck re-emits stuck', () => {
   assert.equal(game.status, 'stuck')
 })
 
-test('open spots full with VIP occupied is lost at once', () => {
+test('open spots full stays stuck with VIP occupied and no locked spot: Fill can still help', () => {
+  const { game } = stuckGame(undefined, SPOTS.filter((t) => t !== 'locked'))
+  assert.deepEqual(useVip(game, 4).at(-1), { type: 'stuck' })
+  assert.deepEqual([vipAvailable(game), unlockAvailable(game), fillAvailable(game)], [false, false, true])
+})
+
+test('unlocking opens the chosen locked spot, un-sticks the game and runs out', () => {
   const { game } = stuckGame()
-  assert.deepEqual(useVip(game, 4).at(-1), { type: 'lost' })
-  assert.equal(game.status, 'lost')
-  const fresh = make(row([0, 1, 2, 3, 4]), rep(5, 10)).game
-  useVip(fresh, 4)
-  ;[0, 1, 2].forEach((id) => tap(fresh, id))
-  assert.deepEqual(tap(fresh, 3).at(-1), { type: 'lost' })
-  assert.equal(vipAvailable(fresh), false)
+  assert.deepEqual(unlockSpot(game, 6), [{ type: 'unlock', spot: 6 }])
+  assert.equal(game.status, 'playing')
+  assert.deepEqual(tap(game, 4), [{ type: 'park', bus: 4, spot: 6 }, { type: 'stuck' }]) // full again
+  assert.deepEqual([1, 6, 99].map((s) => unlockSpot(game, s)), [[], [], []]) // not locked
+  assert.deepEqual([unlockSpot(game, 7), unlockSpot(game, 5)].map((ev) => ev[0].spot), [7, 5])
+  assert.deepEqual(game.spots.map((s) => s.type), ['vip', ...rep('open', 7)])
+  assert.equal(unlockAvailable(game), false)
+})
+
+test('fill boards parked buses straight from the queue; those passengers never enter the loop', () => {
+  const { game } = stuckGame() // loop: 10 of colour 5; buses 0-3 parked; queue: 10 each of colours 0-4 (ids 10-59)
+  assert.equal(fillAvailable(game), true)
+  const ev = fillParked(game)
+  assert.deepEqual(runs(ev), [['fill', 40], ['depart', 4]])
+  assert.deepEqual(ev.filter((e) => e.bus === 0 && e.type === 'fill').map((e) => e.passenger), [10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
+  assert.equal(game.status, 'playing')
+  assert.equal(fillAvailable(game), false) // nothing parked
+  assert.deepEqual(fillParked(game), [])
+  const entered = tap(game, 5).filter((e) => e.type === 'enter').map((e) => e.passenger) // colour 5 boards, the loop refills
+  assert.deepEqual(entered, [50, 51, 52, 53, 54, 55, 56, 57, 58, 59]) // 10-49 were skipped
 })
 
 test('expire turns stuck into lost and is a no-op otherwise', () => {

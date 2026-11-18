@@ -802,6 +802,24 @@ export function drawCoin(ctx, x, y, r) {
   ctx.restore();
 }
 
+// A price tag centred on (x, y): a coin and the amount on a dark pill.
+export function drawPrice(ctx, x, y, amount) {
+  const text = String(amount), h = 28;
+  ctx.save();
+  ctx.font = `800 20px ${FONT}`;
+  const w = 38 + ctx.measureText(text).width;
+  ctx.beginPath();
+  rr(ctx, x - w / 2, y - h / 2, w, h, h / 2);
+  ctx.fillStyle = 'rgba(60,40,90,0.55)';
+  ctx.fill();
+  drawCoin(ctx, x - w / 2 + 15, y, 10);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x - w / 2 + 29, y + 1);
+  ctx.restore();
+}
+
 // px = image size in device pixels (pass CSS size × devicePixelRatio for a crisp counter).
 export function coinDataURL(px) {
   const c = document.createElement('canvas');

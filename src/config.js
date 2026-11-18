@@ -5,6 +5,7 @@ export const BUS_W = 0.84
 export const BUS_PAD = 0.16
 export const SPOTS = ['vip', 'open', 'open', 'open', 'open', 'locked', 'locked', 'locked']
 export const LOOP_CAPACITY = 30
+export const COSTS = { vip: 25, spot: 50, fill: 75 } // coins per power-up use; an unlocked spot lasts for the current level only
 export const MAX_COLORS = 8
 
 // Level parameters (PLAN.md §7). buses = [min, max]; sizes = pick list (repeat a size to weight it);

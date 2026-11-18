@@ -11,15 +11,15 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 **In v1:**
 - A level select screen (the home screen) and the level screen, with win/lose overlays.
 - Endless generated levels with rising difficulty; every level is verified solvable.
-- A VIP power-up, which is free for now.
+- Power-ups bought with coins: VIP (25), unlocking a locked spot (50) and Fill (75). Costs are in `COSTS` in `config.js`.
 - Coins: 50 per completed level, shown on every screen.
 - Saved progress (unlocked level, current level, coins).
 - Candy-style procedural graphics.
+- Synthesized sound effects (`src/sound.js`, Web Audio, no files): a boop when a tapped bus drives off (or goes to VIP), a buzzer when it can't (blocked, or every spot is taken), a rising jingle on a win, a sad trombone on a loss. Buttons are silent.
 - Mouse + touch, on desktop browsers and iOS Safari.
 
 **Out of v1 (named so nothing creeps in):**
-- Spending coins (on the VIP power-up or on unlocking spots). The data is already shaped for both.
-- Sound/music, diagonal buses, undo/hints, settings, offline/PWA, analytics.
+- Music, a mute setting, undo/hints, settings, offline/PWA, analytics.
 - A tutorial beyond a one-line "Tap a bus" hint on level 1.
 
 ## 2. Tech choices
@@ -47,25 +47,25 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 **Level screen**
 ```
 ┌───────────────────────────────┐
-│ ⌂  ↻     Level 12     🪙 150  │  HUD: home, restart, level, coins
+│ ⌂  ↻  »   Level 12    🪙 150  │  HUD: home, restart, fast-forward (2x animation, toggles), level, coins
 │ ╲ arm                 arm ╱ │  walled queue paths from off-screen top-left / top-right join the loop's ends
 │  ═╭───────────────────────╮═  │
 │   │  passenger loop (30)  │   │  compact walled track, 30 peeps packed ~35 px apart; arms show who's next
 │   ╰──────────╡gate╞───────╯   │  passengers leave only through the gate at bottom centre to board
-│ [VIP][ 1 ][ 2 ][ 3 ][ 4 ][🔒][🔒][🔒] │  8 spots: VIP, 4 open, 3 locked
+│ [VIP][ 1 ][ 2 ][ 3 ][ 4 ][🔒][🔒][🔒] │  8 spots: VIP, 4 open, 3 locked (each tagged 🪙50: tap to unlock)
 │ ═══════════ road ═════════════ │
 │ ║ ┌───────────────────────┐ ║ │
 │ ║ │      parking lot      │ ║ │  3×3 up to 9×11 units, zoomed to fit; buses face 8 directions
 │ ║ └───────────────────────┘ ║ │  road on all sides
 │ ═══════════════════════════════ │
-│           [★ VIP]             │  power-up bar under the lot
+│   [★ VIP 🪙25] [✨ Fill 🪙75]  │  power-up bar under the lot, each with its cost
 └───────────────────────────────┘
 ```
 
 **Overlays:**
 - Win: "Level complete! +50 🪙" (no coin line on a replay) → **Next** / **Home**.
 - Lose → **Restart** / **Home**.
-- Stuck: a non-blocking countdown banner above the lot, so you can still tap VIP and a bus.
+- Stuck: a non-blocking countdown banner above the lot, so you can still use a power-up and tap a bus.
 
 On a wide PC window the portrait board stays centred and the side background fills the rest.
 
@@ -82,7 +82,13 @@ On a wide PC window the portrait board stays centred and the side background fil
 **VIP power-up.**
 1. Tap the **VIP button**. The game enters "pick a bus" mode: lot buses glow and a hint reads "Tap a bus to send it to VIP". Tapping the button again cancels.
 2. Tap **any** bus still in the lot, even a blocked one. It teleports into the VIP spot with a sparkle and boards like any parked bus. Removing it can also free other buses' lanes.
-3. The power-up can be used whenever the VIP spot is empty. It's free for now; later it will cost coins. The button is disabled while the VIP spot is occupied.
+3. Each use costs **25 coins**, paid when the bus is picked; cancelling is free. The power-up can be used whenever the VIP spot is empty. The button is disabled while the VIP spot is occupied or the player has too few coins.
+
+**Unlocking a spot.** Each locked spot shows its price (**50 coins**). Tap it to pay and open that spot, with a sparkle. It works like any open spot for the rest of the level; the next level (or a restart) starts with 3 locked spots again. With too few coins the padlock shakes and nothing is charged. While stuck, the price tags pulse if affordable.
+
+**Fill power-up.** Tap **✨ Fill** to pay **75 coins**. Every bus parked in a spot (VIP included) fills at once: the matching passengers waiting on the arms (or still off-screen) fly straight into it, leftmost bus first, in queue order. Passengers already on the loop who were headed for those buses fly in too, instead of walking round to the gate. Each colour has exactly as many passengers as seats, so every parked bus fills and drives off. The flights are magic: they arc over the wall from wherever the passenger stood, with a sparkle. The button is disabled when no parked bus is waiting for passengers or the player has too few coins.
+
+Costs are `COSTS` in `config.js`. The rules (`sim.js`) know nothing about coins: `game.js` checks the price before calling `useVip` / `unlockSpot` / `fillParked` and takes the coins after.
 
 **Passengers.** Each level has an ordered queue of passengers. For each colour, the passenger count equals the total seats of that colour's buses. Up to **30** are on the loop at once. The rest queue on the top-left and top-right arms so the player can see who is coming (which arm is purely visual). Each arm is one continuous line streaming in from off-screen. The first loopful alternates between the arms so the loop fills fast. After that the left arm holds the first half of the remaining queue and the right arm the second half. Passengers step on in queue order, so the left arm runs completely empty before anyone on the right steps on. The one at the front of its arm waits just outside the loop wall, steps onto the first free place that passes, and the line moves up.
 
@@ -92,17 +98,16 @@ A parked bus shows the seats it still has to fill; the number disappears at 0 an
 
 **Departing.** A full bus drives off the side of the screen and is done. Its spot frees up.
 
-**Settle.** After every tap or VIP use, the rules repeat (stream in → board → depart) until nothing changes. Then:
+**Settle.** After every tap or power-up use, the rules repeat (stream in → board → depart) until nothing changes. Then:
 - **Win** if every bus is gone.
-- **Stuck** if all 4 open spots are full. Settling already did every boarding that could happen.
-  - If a power-up can still be used (today that means the VIP spot is empty), status becomes `stuck`. A **10-second countdown** starts ("Out of space! Use a power-up: 10…") and the VIP button pulses.
+- **Stuck** if every open spot is full. Settling already did every boarding that could happen, so the spots hold buses still waiting for passengers, and Fill can always clear them. Status becomes `stuck` (never `lost` straight away). A **10-second countdown** starts ("Out of space! Use a power-up: 10…") and the power-up buttons pulse.
     - If a power-up is used in time and that un-sticks the game, play continues.
     - If it is used and the game is still stuck, the countdown restarts.
     - If time runs out, it's **game over**.
-  - If no power-up can be used (the VIP spot is occupied), it's **game over** at once. A countdown with nothing to press would just be a wait.
+  - If the player has too few coins for any power-up that can still be used, it's **game over** at once (`game.js` checks this when the countdown would start). A countdown with nothing to press would just be a wait.
   - The countdown is a real-time UI timer in `game.js`, not part of the rules, so levels stay deterministic. When it expires, `game.js` calls `expire(game)`, which sets `lost`.
 
-**Key design decision.** The rules settle instantly on each action, and the animation plays catch-up. Timing therefore never affects the outcome, only the order of actions. That makes the game fully deterministic, so verifying a level means replaying a tap sequence through the real game code.
+**Key design decision.** The rules settle instantly on each action, and the animation plays catch-up at normal speed (never sped up automatically; the player can turn on 2x fast-forward). Timing therefore never affects the outcome, only the order of actions. That makes the game fully deterministic, so verifying a level means replaying a tap sequence through the real game code.
 
 ## 5. Data contract (shared by all modules and subagents)
 
@@ -123,15 +128,22 @@ A parked bus shows the seats it still has to fill; the number disappears at 0 an
 createGame(level) → { game, events }       // events = initial loop fill
 tap(game, busId)    → events[]
 useVip(game, busId) → events[]             // no-op [] unless VIP spot empty and bus in lot
+unlockSpot(game, spot) → events[]          // opens that spot; no-op [] unless it is locked
+fillParked(game)    → events[]             // fills every parked bus from the queue; no-op [] if none is waiting
 laneCheck(game, busId) → { clear: true } | { clear: false, blocker, free } // free = units it can drive first
 vipAvailable(game)  → boolean
+unlockAvailable(game) → boolean           // a locked spot is left
+fillAvailable(game) → boolean              // a parked bus is waiting for passengers (all three ignore coins)
 expire(game)        → events[]             // stuck → lost (countdown ran out)
 game.status         // 'playing' | 'stuck' | 'won' | 'lost'   (stuck = only a power-up can help)
+game.skip           // Set of queued passenger ids Fill already put on a bus; streaming in passes over them
 
 // Events, consumed by the renderer in order:
 { type: 'bounce',   bus, blocker, free }
 { type: 'park',     bus, spot }            // spot = index into spots[]
 { type: 'teleport', bus, spot }            // VIP
+{ type: 'unlock',   spot }                 // a locked spot opened
+{ type: 'fill',     passenger, bus, spot } // Fill: a queued passenger boards straight from the queue
 { type: 'enter',    passenger, color, slot } // passenger = queue index, slot = loop slot 0..29
 { type: 'board',    passenger, bus, spot }
 { type: 'depart',   bus, spot }
@@ -142,8 +154,6 @@ load() → { unlocked: 1, current: 1, coins: 0 }   // defaults when nothing save
 save(p)
 applyWin(p, n) → p'   // coins += 50 only if n === unlocked (first completion); unlocked = max(unlocked, n+1); current = n+1
 ```
-
-The coins features later only need to change `spots` from `'locked'` to `'open'` and add a cost check in `vipAvailable`.
 
 ## 6. Level generation and verification
 
@@ -163,9 +173,10 @@ The coins features later only need to change `spots` from `'locked'` to `'open'`
 - VIP:
   - It can teleport a blocked bus, and the bus boards.
   - It can't be used while the VIP spot is occupied.
-  - The game goes `stuck` (not `lost`) when the open spots are full and VIP is empty.
-  - The game goes `lost` when VIP is occupied too.
+  - The game goes `stuck` (not `lost`) when the open spots are full, even with VIP occupied and no locked spot left.
   - `expire` turns `stuck` into `lost`.
+- Unlock: opens only the chosen locked spot and un-sticks the game; after three there are none left.
+- Fill: parked buses fill straight from the queue and depart; those passengers never enter the loop.
 - Progress: defaults; unlock and +50 coins on first completion; replaying an old level gives no coins and doesn't move `unlocked` backwards; a corrupt save falls back to defaults.
 - `levels.test.js`: levels 1–300 each generate deterministically and pass sanity checks (in bounds, no overlap, seats per colour = passengers per colour, acyclic). Each replays `solution` to `won` and generates in well under 100 ms.
 
@@ -205,7 +216,8 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
   - A roof badge with the colour symbol only; the bus length shows its size. On 1-unit buses it is nudged to the rear so the windscreen shows which way they face. Only parked buses show a number: a larger badge with the seats still to fill.
 - **Passengers ("peeps"):** gumdrop body + round head in their colour, a gloss dot, and the colour symbol on the belly.
 - **Spots:** rounded pads with white dashed lines. VIP is gold with a star and a "VIP" label. Locked spots are grey with a padlock.
-- **VIP button:** a gold candy pill with a star. It pulses when stuck and is greyed out when the VIP spot is occupied.
+- **Power-up buttons:** candy pills (gold ★ VIP, green ✨ Fill), each with a coin and its cost. They pulse when stuck and are greyed out when unusable or unaffordable.
+- **Price tag:** a dark pill with a coin and the amount (`drawPrice`), on each locked spot.
 - **Coin:** a gold glossy disc, used in the coin counter on every screen.
 - **Loop:** jelly-style rounded track with a candy-stripe edge. **Road:** soft lavender-grey. **Background:** pastel gradient with faint polka dots.
 - **Teleport:** a sparkle burst at the old position and at the VIP spot.
@@ -261,6 +273,7 @@ src/sim.js          rules (pure), incl. VIP
 src/generator.js    generateLevel(n) + verification
 src/progress.js     save/load/applyWin
 src/art.js          palette + candy drawing functions
+src/sound.js        synthesized sound effects: boop, buzz, win, lose
 src/game.js         level screen: layout, input/hit-test, VIP pick mode, animation from events
 src/main.js         boot, screen switching (level select ↔ level), coin counter
 test/sim.test.js
@@ -292,8 +305,8 @@ All settled:
 - Seats and lengths: 4/6/10 seats = 1/2/3 units, on a free-form lot that zooms to fit.
 - Colour-blind symbols: on.
 - Loop: 30 on screen, fed by two arms that show the upcoming queue.
-- VIP: a power-up only.
+- Power-ups: VIP 25 coins per use; unlocking a spot 50 coins (tap the locked spot), for the current level only; Fill 75 coins.
 - Coins: 50, first completion of a level only.
-- Out of space: a 10 s countdown to use a power-up; game over at once if none can be used.
+- Out of space: a 10 s countdown to use a power-up; game over at once if none is affordable.
 - Saves: localStorage.
 - Name: "Bus Traffic" (placeholder).

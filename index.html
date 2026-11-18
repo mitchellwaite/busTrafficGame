@@ -32,10 +32,14 @@
     <div class="hud">
       <button id="homeBtn" class="btn blue round" aria-label="Home">⌂</button>
       <button id="restartBtn" class="btn blue round" aria-label="Restart">↻</button>
+      <button id="ffBtn" class="btn blue round" aria-label="Fast forward" aria-pressed="false">»</button>
     </div>
     <div id="levelLabel"></div>
     <div id="msg"><div id="banner"></div><div id="hint"></div></div>
-    <div id="powerups"><button id="vip" class="btn gold">★ VIP</button></div>
+    <div id="powerups">
+      <button id="vip" class="btn gold">★ VIP <span class="cost"><img class="coin" alt="coins"><span id="vipCost"></span></span></button>
+      <button id="fill" class="btn green">✨ Fill <span class="cost"><img class="coin" alt="coins"><span id="fillCost"></span></span></button>
+    </div>
   </section>
 
   <div id="overlay" hidden>

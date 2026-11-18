@@ -2,6 +2,7 @@
 import { load, save, applyWin } from './progress.js'
 import { coinDataURL, drawBus } from './art.js'
 import * as level from './game.js'
+import './sound.js' // unlocks audio on the first tap
 
 const $ = (id) => document.getElementById(id)
 let progress = load()
@@ -61,7 +62,24 @@ level.init({
     return progress.coins > before
   },
   coins,
+  balance: () => progress.coins,
+  // Callers check balance() first.
+  spend(n) {
+    progress = { ...progress, coins: progress.coins - n }
+    save(progress)
+    coins()
+  },
   home,
   next: () => play(progress.current),
 })
 home()
+
+// Console cheat for testing: setCoins(500)
+window.setCoins = (n) => {
+  // load() throws away a save whose coins are not a whole number >= 0, so refuse anything else
+  if (!Number.isInteger(n) || n < 0) throw new RangeError('setCoins needs a whole number of coins, 0 or more')
+  progress = { ...progress, coins: n }
+  save(progress)
+  coins()
+  return n
+}

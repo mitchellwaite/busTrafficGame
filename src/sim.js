@@ -12,10 +12,11 @@
  *     spot,       // index into spots while parked, else null
  *     filled,     // passengers on board, 0..size
  *   }],
- *   spots: [{ type, bus, freed }], // type 'vip' | 'open' | 'locked'; bus = id or null;
+ *   spots: [{ type, bus, freed }], // type 'vip' | 'open' | 'locked' (unlockSpot opens one); bus = id or null;
  *                // freed = departures so far when it last emptied (0 = never used)
  *   loop,         // loopCapacity slots, each a passenger id or null
- *   queueIndex,   // next passenger id to enter; passengers.length - queueIndex still wait off-screen
+ *   queueIndex,   // next passenger id to enter (ids in skip are passed over)
+ *   skip,         // Set of queued passenger ids the Fill power-up already put on a bus
  *   passengers,   // passenger id (= queue index) -> colour; this is level.queue
  * }
  */
@@ -30,6 +31,7 @@ export function createGame(level) {
     spots: level.spots.map((type) => ({ type, bus: null, freed: 0 })),
     loop: Array(level.loopCapacity).fill(null),
     queueIndex: 0,
+    skip: new Set(),
     passengers: level.queue,
   }
   const events = []
@@ -55,6 +57,33 @@ export function useVip(game, busId) {
   return arrive(game, bus, game.spots.findIndex((s) => s.type === 'vip'), 'teleport')
 }
 
+// Extra-spot power-up: opens this locked spot for the rest of this game.
+export function unlockSpot(game, spot) {
+  if (!live(game) || game.spots[spot]?.type !== 'locked') return []
+  game.spots[spot].type = 'open'
+  const events = [{ type: 'unlock', spot }]
+  settle(game, events)
+  return events
+}
+
+// Fill power-up: every parked bus takes its missing passengers straight from the queue, in queue order, leftmost
+// bus first. (Matching passengers on the loop have already boarded.) Each colour has exactly as many passengers as
+// seats, so every parked bus fills and departs.
+export function fillParked(game) {
+  if (!fillAvailable(game)) return []
+  const events = []
+  const parked = game.buses.filter((b) => b.state === 'parked').sort((a, b) => a.spot - b.spot)
+  for (let p = game.queueIndex; p < game.passengers.length; p++) {
+    const bus = !game.skip.has(p) && parked.find((b) => b.color === game.passengers[p] && b.filled < b.size)
+    if (!bus) continue
+    bus.filled++
+    game.skip.add(p)
+    events.push({ type: 'fill', passenger: p, bus: bus.id, spot: bus.spot })
+  }
+  settle(game, events)
+  return events
+}
+
 // The first lot bus in this bus's way and how far it can drive before touching it (lot units).
 export function laneCheck(game, busId) {
   const bus = game.buses[busId]
@@ -66,7 +95,11 @@ export function laneCheck(game, busId) {
   return blocker === null ? { clear: true } : { clear: false, blocker, free }
 }
 
-export const vipAvailable = (game) => (game.status === 'playing' || game.status === 'stuck') && vipFree(game)
+// Power-ups can be used while playing or stuck. Coins are not the rules' business: game.js checks the cost.
+const live = (game) => game.status === 'playing' || game.status === 'stuck'
+export const vipAvailable = (game) => live(game) && vipFree(game)
+export const unlockAvailable = (game) => live(game) && game.spots.some((s) => s.type === 'locked')
+export const fillAvailable = (game) => live(game) && game.buses.some((b) => b.state === 'parked' && b.filled < b.size)
 
 export function expire(game) {
   if (game.status !== 'stuck') return []
@@ -86,13 +119,16 @@ function arrive(game, bus, spot, type) {
 }
 
 // Stream in -> board -> depart until stable, then set status. Re-emits 'stuck' after a VIP use that
-// leaves the game stuck, so the countdown can restart.
+// leaves the game stuck, so the countdown can restart. A full row is only ever 'stuck', never 'lost': it is full of
+// parked buses waiting for passengers, so the Fill power-up can always clear it. Only expire() loses.
 function settle(game, events) {
   const { loop, passengers } = game
   for (let changed = true; changed; ) {
     changed = false
-    for (let s = 0; s < loop.length && game.queueIndex < passengers.length; s++) {
+    for (let s = 0; s < loop.length; s++) {
       if (loop[s] !== null) continue
+      while (game.skip.has(game.queueIndex)) game.queueIndex++
+      if (game.queueIndex >= passengers.length) break
       const p = game.queueIndex++
       loop[s] = p
       events.push({ type: 'enter', passenger: p, color: passengers[p], slot: s })
@@ -121,7 +157,7 @@ function settle(game, events) {
   game.status = game.buses.every((b) => b.state === 'gone')
     ? 'won'
     : game.spots.every((s) => s.type !== 'open' || s.bus !== null)
-      ? vipFree(game) ? 'stuck' : 'lost'
+      ? 'stuck'
       : 'playing'
   if (game.status !== 'playing') events.push({ type: game.status })
 }

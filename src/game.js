@@ -1,13 +1,14 @@
 // Level screen (PLAN.md §3-§5): layout, input/hit-test, VIP pick mode and animation.
 // The sim settles instantly; play() schedules its events on a timeline and the visuals catch up to the sim state.
-import { createGame, tap, useVip, vipAvailable, expire } from './sim.js'
+import { createGame, tap, useVip, vipAvailable, unlockSpot, unlockAvailable, fillParked, fillAvailable, expire } from './sim.js'
 import { heading } from './geometry.js'
-import { BUS_W, BUS_PAD } from './config.js'
+import { BUS_W, BUS_PAD, COSTS } from './config.js'
 import { generateLevel } from './generator.js'
-import { drawBackground, drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle } from './art.js'
+import * as sfx from './sound.js'
+import { drawBackground, drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle, drawPrice } from './art.js'
 
 const $ = (id) => document.getElementById(id)
-const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = $('vip')
+const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = $('vip'), fillBtn = $('fill')
 
 // Design space: 720 wide; height H >= 1280 follows the screen aspect and the extra goes to the lot.
 // BAR = room kept under the lot for the power-up buttons (#powerups).
@@ -26,8 +27,8 @@ const frac = (u) => u - Math.floor(u)
 
 const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 // now = visual time (drives all animation), clock = play time (drives the stuck countdown), real = last frame's wall time.
-let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0
-let vis, peeps, sparks, timers, free, joinAt, armStart, spotFree, picking, stuckAt, hint, gained
+let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0, speed = 1
+let vis, peeps, sparks, timers, free, joinAt, lastJoin, armJoin, armStart, spotFree, lockShake, picking, stuckAt, hint, gained
 
 window.__bt = { get game() { return game }, get level() { return level }, get joinAt() { return joinAt }, get now() { return now } } // for testing
 
@@ -39,8 +40,16 @@ export function init(h) {
   cv.addEventListener('pointerdown', onDown)
   $('homeBtn').onclick = () => hooks.home()
   $('restartBtn').onclick = () => start(level.level)
+  $('ffBtn').onclick = (e) => {
+    speed = 3 - speed // 1 <-> 2; kept across levels for this session
+    e.currentTarget.classList.toggle('on', speed === 2)
+    e.currentTarget.setAttribute('aria-pressed', speed === 2)
+  }
   $('ovB').onclick = () => hooks.home()
   vipBtn.onclick = () => (picking = !picking)
+  fillBtn.onclick = buyFill
+  $('vipCost').textContent = COSTS.vip
+  $('fillCost').textContent = COSTS.fill
   now = clock = real = performance.now() / 1000
   requestAnimationFrame(frame)
 }
@@ -54,9 +63,12 @@ export function start(n) {
   sparks = []
   timers = []
   free = game.loop.map(() => 0) // per place on the loop: when it is free to take, Infinity while taken
-  joinAt = [] // per passenger: when it steps from its arm onto the loop
+  joinAt = [] // per passenger: when it steps from its arm onto the loop (or flies off it, for Fill)
+  lastJoin = -Infinity // when the last passenger to enter steps on, overall and per arm
+  armJoin = [-Infinity, -Infinity]
   armStart = [0, 0] // per arm: no passenger before this one is still drawn there
   spotFree = []
+  lockShake = [] // per spot: when a tap on it was refused
   picking = false
   stuckAt = null
   gained = null
@@ -156,13 +168,9 @@ const armOf = (id) => {
   const cap = game.loop.length
   return id < cap ? id % 2 : +(id >= cap + Math.ceil((game.passengers.length - cap) / 2))
 }
-const prevOnArm = (side, id) => {
-  let j = id - 1
-  while (j >= 0 && armOf(j) !== side) j--
-  return j
-}
 
 const slotPos = (s) => loopPoint(LOOP, s / game.loop.length + now / LAP)
+const FLY = 0.45, FLY_ARC = 90 // Fill power-up: seconds in the air (plus a stagger), and how high the flight arcs
 // Earliest time >= t0 at which slot s is at loop param `at`.
 const nextAt = (s, at, t0) => t0 + frac(at - s / game.loop.length - t0 / LAP) * LAP
 
@@ -170,7 +178,7 @@ const nextAt = (s, at, t0) => t0 + frac(at - s / game.loop.length - t0 / LAP) * 
 
 function play(events) {
   const T = now
-  let end = T, run = []
+  let end = T, run = [], fly = null
   for (const e of events) {
     if (e.type === 'board') {
       run.push(e)
@@ -194,20 +202,29 @@ function play(events) {
       v.spot = e.spot
       sparks.push({ x: p.x, y: p.y, t: T }, { x: spotX(e.spot), y: SPOT_CY, t: appear - 0.1 })
       end = Math.max(end, (v.ready = appear + 0.25))
+    } else if (e.type === 'unlock') sparks.push({ x: spotX(e.spot), y: SPOT_CY, t: T })
+    else if (e.type === 'fill') {
+      // A queued passenger the Fill power-up put on a bus: it leaves its arm (or off-screen) and flies there.
+      fly ??= rush(T)
+      const p = { color: game.passengers[e.passenger], slot: -1, join: T }
+      peeps.set(e.passenger, p)
+      joinAt[e.passenger] = T
+      const land = launch(p, fly.arm.get(e.passenger) ?? ARMS[armOf(e.passenger)].pts[0], e.bus, T, fly.k++)
+      v.landings.push(land)
+      end = Math.max(end, land)
     } else if (e.type === 'enter') {
       // In queue order, once at the front of its arm, a passenger steps onto the first free place on the loop that
       // passes the arm's end. Places on screen are not the rules' slots: only the count matters to the rules, and a
       // passenger needs a place only until it boards.
       const side = armOf(e.passenger), arm = ARMS[side]
-      const ahead = joinAt[prevOnArm(side, e.passenger)] ?? -Infinity
-      const ready = Math.max(T, joinAt[e.passenger - 1] ?? -Infinity, ahead + STEP + JOIN_T)
+      const ready = Math.max(T, lastJoin, armJoin[side] + STEP + JOIN_T)
       let slot = -1, join = Infinity
       free.forEach((f, k) => {
         const t = f < Infinity ? nextAt(k, arm.at, Math.max(ready, f)) : Infinity
         if (t < join) [slot, join] = [k, t]
       })
       free[slot] = Infinity
-      joinAt[e.passenger] = join
+      lastJoin = armJoin[side] = joinAt[e.passenger] = join
       peeps.set(e.passenger, { color: e.color, slot, join })
       end = Math.max(end, join)
     } else if (e.type === 'depart') {
@@ -245,7 +262,7 @@ function board(run) {
       const id = open.filter((i) => vis[i].ready <= t).sort((m, n) => vis[m].spot - vis[n].spot)[0]
       seats.set(id, seats.get(id) - 1)
       pax.splice(pax.indexOf(p), 1)
-      p.hop = { t, spot: vis[id].spot }
+      p.hop = { t, spot: vis[id].spot, bus: id }
       free[p.slot] = t
       vis[id].landings.push(t + OUT + HOP)
       end = Math.max(end, t + OUT + HOP)
@@ -254,25 +271,90 @@ function board(run) {
   return end
 }
 
+// Fill power-up: passenger p flies from `from` into bus id's spot, landing once the bus is there. k staggers the
+// landings so the passengers pour in. Returns the landing time.
+function launch(p, from, id, T, k) {
+  const v = vis[id], land = Math.max(T + FLY + 0.03 * Math.min(k, 30), v.ready + 0.1)
+  p.hop = { t: T, spot: v.spot, bus: id, from, dur: land - T }
+  sparks.push({ x: from[0], y: from[1], t: T })
+  return land
+}
+
+// Fill power-up: passengers already headed for a bus (walking the loop to the gate, or still on an arm) fly there
+// now too, so every parked bus fills at once. Returns where everyone on the arms stands, and how many flew.
+function rush(T) {
+  const arm = new Map(armPeeps().map((q) => [q[4], [q[0], q[1]]]))
+  const moved = new Set()
+  let k = 0
+  for (const [id, p] of peeps) {
+    if (!p.hop || p.hop.t <= T) continue
+    const v = vis[p.hop.bus], old = p.hop.t + OUT + HOP
+    if (free[p.slot] === p.hop.t) free[p.slot] = T // its place on the loop frees up now (unless already re-booked)
+    let from
+    if (T < p.join) {
+      from = arm.get(id) ?? ARMS[armOf(id)].pts[0]
+      p.join = joinAt[id] = T
+    } else from = [slotPos(p.slot).x, slotPos(p.slot).y]
+    v.landings[v.landings.indexOf(old)] = launch(p, from, p.hop.bus, T, k++)
+    moved.add(p.hop.bus)
+  }
+  for (const id of moved) {
+    const v = vis[id]
+    if (!v.depart) continue
+    v.depart.t = Math.max(...v.landings) + 0.15
+    spotFree[v.spot] = v.depart.t + 0.3
+  }
+  return { arm, k }
+}
+
 // ---------- input ----------
 
 function onDown(e) {
   e.preventDefault()
   if (!game || !overlay.hidden) return
-  const id = hit((e.clientX - view.ox) / view.s, (e.clientY - view.oy) / view.s)
+  const x = (e.clientX - view.ox) / view.s, y = (e.clientY - view.oy) / view.s
+  const s = y >= SPOT_Y && y <= SPOT_Y + SPOT_H ? game.spots.findIndex((_, i) => Math.abs(x - spotX(i)) <= SPOT_W / 2) : -1
+  if (game.spots[s]?.type === 'locked') {
+    picking = false
+    if (!canSpot()) return void (lockShake[s] = now) // too few coins (or the game is over): the lock shakes
+    hooks.spend(COSTS.spot)
+    return play(unlockSpot(game, s))
+  }
+  const id = hit(x, y)
   if (id === null) return
   hint = false
   let events
   if (picking) {
     picking = false
-    events = useVip(game, id)
-    if (events.length) stuckAt = null // a re-emitted 'stuck' restarts the countdown when it plays
+    events = canVip() ? useVip(game, id) : []
+    if (events.length) {
+      hooks.spend(COSTS.vip)
+      stuckAt = null // a re-emitted 'stuck' restarts the countdown when it plays
+    }
   } else if (!spotOpen()) {
+    sfx.buzz()
     vis[id].wobble = now // every spot is taken on screen: the bus shakes instead of driving off
     return
   } else events = tap(game, id)
+  events[0]?.type === 'bounce' ? sfx.buzz() : sfx.boop() // a bus that can't get out buzzes
+  act(events)
+}
+
+function act(events) {
   if (game.status === 'won' && gained === null) gained = hooks.win(level.level)
   play(events)
+}
+
+// Power-ups the rules allow and the player can pay for.
+const canVip = () => vipAvailable(game) && hooks.balance() >= COSTS.vip
+const canSpot = () => unlockAvailable(game) && hooks.balance() >= COSTS.spot
+const canFill = () => fillAvailable(game) && hooks.balance() >= COSTS.fill
+
+function buyFill() {
+  if (!canFill()) return
+  hooks.spend(COSTS.fill)
+  picking = false
+  act(fillParked(game))
 }
 
 // An open spot that is empty on screen too. The rules free a spot as soon as its bus fills, before it drives off.
@@ -299,8 +381,7 @@ function frame() {
   const t = performance.now() / 1000, dt = Math.min(0.1, t - real)
   real = t
   clock += dt
-  // Visual time speeds up while more than 15 s of animation is queued, so fast tapping never leaves the board far behind.
-  now += dt * (1 + Math.max(0, animEnd - now - 15) / 5)
+  now += dt * speed // fast-forward runs every animation at 2x; the countdown (clock) stays real time
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0)
   drawBackground(ctx, view.w, view.h)
   if (!game) return
@@ -316,7 +397,13 @@ function frame() {
 function tick() {
   for (const tm of timers) {
     if (tm.at > now) continue
-    if (tm.type === 'stuck' && game.status === 'stuck') stuckAt = clock + COUNTDOWN
+    if (tm.type === 'stuck' && game.status === 'stuck') {
+      if (canVip() || canSpot() || canFill()) stuckAt = clock + COUNTDOWN
+      else { // no power-up the player can pay for: a countdown would just be a wait
+        expire(game)
+        showEnd(false)
+      }
+    }
     if (tm.type === 'won' || tm.type === 'lost') showEnd(tm.type === 'won')
   }
   timers = timers.filter((tm) => tm.at > now)
@@ -330,6 +417,7 @@ function tick() {
 function showEnd(win) {
   picking = false
   stuckAt = null
+  win ? sfx.win() : sfx.lose()
   $('ovTitle').textContent = win ? 'Level complete!' : 'Out of space!'
   $('ovCoins').hidden = !(win && gained)
   const a = $('ovA')
@@ -342,10 +430,11 @@ function showEnd(win) {
 const text = (el, t) => el.textContent !== t && (el.textContent = t)
 
 function dom() {
-  const ok = overlay.hidden && vipAvailable(game)
+  const ok = overlay.hidden && canVip()
   if (!ok) picking = false
   vipBtn.disabled = !ok
-  vipBtn.classList.toggle('pulse', stuckAt !== null)
+  fillBtn.disabled = !(overlay.hidden && canFill())
+  for (const b of [vipBtn, fillBtn]) b.classList.toggle('pulse', stuckAt !== null)
   vipBtn.classList.toggle('on', picking)
   text($('banner'), stuckAt !== null ? `Out of space!\nUse a power-up: ${Math.max(0, Math.ceil(stuckAt - clock - 1e-6))}` : '')
   text($('hint'), picking ? 'Pick a bus for VIP' : hint ? 'Tap a bus to drive it out!' : '')
@@ -360,7 +449,13 @@ function drawLevel() {
   drawLoop(ctx, LOOP, TRACK, FEEDERS)
   drawPeeps(false)
   drawLot(ctx, lot, ROAD)
-  game.spots.forEach((sp, i) => drawSpot(ctx, spotX(i) - SPOT_W / 2, SPOT_Y, SPOT_W, SPOT_H, sp.type))
+  // Locked spots carry their price, which pulses while stuck if affordable; a refused tap shakes the lock.
+  const pulse = stuckAt !== null && canSpot() ? 1 + 0.12 * Math.abs(Math.sin(now * 5)) : 1
+  game.spots.forEach((sp, i) => {
+    const wt = now - (lockShake[i] ?? -9), x = spotX(i) + (wt < 0.45 ? 6 * Math.sin(wt * 40) * (1 - wt / 0.45) : 0)
+    drawSpot(ctx, x - SPOT_W / 2, SPOT_Y, SPOT_W, SPOT_H, sp.type)
+    if (sp.type === 'locked') scaled(x, SPOT_Y + SPOT_H - 20, pulse, 1, () => drawPrice(ctx, 0, 0, COSTS.spot))
+  })
   const phases = vis.map(phase), layerOf = (ph) => (ph === 'lot' ? 0 : ph === 'parked' ? 1 : 2)
   for (const layer of [0, 1, 2]) game.buses.forEach((b, i) => phases[i] && layerOf(phases[i]) === layer && drawOne(b, vis[i], phases[i]))
   drawPeeps(true)
@@ -451,8 +546,8 @@ function armPeeps() {
         const [x, y] = along(arm.pts, arm.len - d), u = (now - j + JOIN_T) / JOIN_T
         if (u > 0) {
           const s = slotPos(peeps.get(id).slot)
-          list.push([x + (s.x - x) * u, y + (s.y - y) * u, 1, q[id]])
-        } else list.push([x, y - Math.abs(Math.sin(((d - WAIT) * Math.PI) / GAP)) * 4, 1, q[id]]) // a hop per place moved up
+          list.push([x + (s.x - x) * u, y + (s.y - y) * u, 1, q[id], id])
+        } else list.push([x, y - Math.abs(Math.sin(((d - WAIT) * Math.PI) / GAP)) * 4, 1, q[id], id]) // a hop per place moved up
       }
       d += now < j ? GAP : GAP * (1 - (now - j) / STEP)
     }
@@ -460,13 +555,19 @@ function armPeeps() {
   return list
 }
 
-// Peeps on the arms and the loop (hopping=false) or hopping from the gate into buses (hopping=true), lower ones on top.
+// Peeps on the arms and the loop (hopping=false) or hopping from the gate (or flying, for Fill) into buses
+// (hopping=true), lower ones on top.
 function drawPeeps(hopping) {
   const list = hopping ? [] : armPeeps()
   for (const [id, p] of peeps) {
-    const h = p.hop && now >= p.hop.t ? (now - p.hop.t) / (OUT + HOP) : -1
+    const h = p.hop && now >= p.hop.t ? (now - p.hop.t) / (p.hop.dur ?? OUT + HOP) : -1
     if (h >= 1) peeps.delete(id)
     if (h >= 1 || h >= 0 !== hopping) continue
+    if (hopping && p.hop.from) {
+      const [x0, y0] = p.hop.from, tx = spotX(p.hop.spot), u = h * h * (3 - 2 * h) // ease in and out
+      list.push([x0 + (tx - x0) * u, y0 + (SPOT_CY - y0) * u - Math.sin(u * Math.PI) * FLY_ARC, 1 - 0.45 * u, p.color])
+      continue
+    }
     if (hopping) {
       const e = now - p.hop.t, u = clamp01((e - OUT) / HOP), tx = spotX(p.hop.spot)
       if (e < OUT) list.push([GATE_PT.x, GATE_PT.y + ((EXIT_Y - GATE_PT.y) * e) / OUT, 1, p.color])
