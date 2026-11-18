@@ -24,6 +24,7 @@ Browser puzzle game for PC and iOS Safari: tap buses out of a jammed lot into pa
 - Layout is a fixed design space 720 px wide; the height is at least 1280 and follows the screen. Positions are constants at the top of `game.js`. The DOM UI in `#stage` (`index.html`, `style.css`) is scaled with the canvas.
 - Saves: `localStorage` key `busTraffic.save` holds `{unlocked, current, coins}`. Keep that format compatible.
 - `art-preview.html` is a dev-only art sheet.
+- `update.js` (a plain script, not a module) keeps installed copies current: on launch and whenever the page returns to the foreground it re-fetches every file with `cache: 'no-cache'`, fingerprints them (localStorage `busTraffic.build`), and on a change reloads: at once on the home screen, otherwise when the player next goes home. Its `FILES` list must name every file the game loads; `test/update.test.js` fails if a `src/*.js` file is missing from it.
 
 ## Checking changes in the in-app browser
 
@@ -39,6 +40,7 @@ Browser puzzle game for PC and iOS Safari: tap buses out of a jammed lot into pa
   Take one screenshot first, so the pending real frame hands over to the shim.
 - `setCoins(n)` in the console sets the coin count (saved).
 - `window.__bt` exposes `game`, `level`, `joinAt` (when each passenger steps onto the loop), `vis` (per-bus animation state; `vis[i].move.hold` > 0 would mean a bus waited on the road for its spot, which must never happen) and `now` (visual time, the clock `joinAt` uses).
+- After editing files, `update.js` may reload the page by itself when the pane becomes visible again on the home screen; set up any frame-pump shim after that.
 - After editing modules, re-fetch them with `fetch(url, {cache: 'reload'})` before reloading. Otherwise cached old modules mix with new ones and the page fails to load.
 - Remove any test save (`localStorage.removeItem('busTraffic.save')`) and reset the viewport when done.
 

@@ -50,6 +50,7 @@ For testing, type `setCoins(500)` in the browser console to set your coin count.
 
 - Plain HTML, Canvas 2D and JavaScript modules. No frameworks and no dependencies.
 - All the art is drawn in code, and the sounds are generated with the Web Audio API, so there are no image or audio files.
+- It updates itself: `update.js` checks for new files when the game opens or comes back to the foreground, and reloads on the home screen when it finds any. That keeps a copy added to the iPhone Home Screen current.
 - The game rules (`src/sim.js`) are separate from the animation (`src/game.js`) and never depend on timing, so a level plays out the same however fast you tap.
 
 | File | Role |

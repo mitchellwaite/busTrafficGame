@@ -295,6 +295,8 @@ art-preview.html    dev-only sheet of every art piece (delete any time)
 
 Each agent gets this file as its spec plus a narrow brief: its files only, the §5 contract, and its done-criteria.
 
+**Updates:** `update.js` checks the server for changed files on launch and whenever the game comes back to the foreground (iOS resumes a Home Screen app without reloading, and GitHub Pages lets browsers reuse files for 10 minutes). If anything changed it reloads, on the home screen only, so a level in progress is never interrupted.
+
 **Testing on your iPhone:** run `python serve.py` on the PC, then open `http://<PC-IP>:8000` on the phone over the same Wi-Fi (allow it through Windows Firewall when asked). Saves are per address, so progress made at a LAN address won't carry over to a later hosted URL. GitHub Pages works if you want a stable public URL.
 
 ## 12. Decisions
