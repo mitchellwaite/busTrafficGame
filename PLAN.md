@@ -48,9 +48,9 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 ```
 ┌───────────────────────────────┐
 │ ⌂  ↻     Level 12     🪙 150  │  HUD: home, restart, level, coins
-│ ╲ feeder           feeder ╱ │  walled paths from off-screen top-left / top-right join the loop's ends
+│ ╲ arm                 arm ╱ │  walled queue paths from off-screen top-left / top-right join the loop's ends
 │  ═╭───────────────────────╮═  │
-│   │  passenger loop (30)  │   │  walled candy track; 30 peeps circulate, more walk in as room frees
+│   │  passenger loop (30)  │   │  compact walled track, 30 peeps packed ~35 px apart; arms show who's next
 │   ╰──────────╡gate╞───────╯   │  passengers leave only through the gate at bottom centre to board
 │ [VIP][ 1 ][ 2 ][ 3 ][ 4 ][🔒][🔒][🔒] │  8 spots: VIP, 4 open, 3 locked
 │ ═══════════ road ═════════════ │
@@ -71,7 +71,7 @@ On a wide PC window the portrait board stays centred and the side background fil
 
 ## 4. Game rules (exact, because the solver, tests and game all run this same code)
 
-**Lot.** A free-form area measured in units (1 unit = one bus width), with no grid. Each bus has a centre point and a heading in 45° steps, so later levels mix in diagonal buses, and a length set by its size: **10 seats = 1 unit, 20 = 2 units, 40 = 3 units**. Lots get more units across as the bus count grows, and the screen zooms the lot out to fit.
+**Lot.** A free-form area measured in units (1 unit = one bus width), with no grid. Each bus has a centre point and a heading in 45° steps, so later levels mix in diagonal buses, and a length set by its size: **4 seats = 1 unit, 6 = 2 units, 10 = 3 units**. Lots get more units across as the bus count grows, and the screen zooms the lot out to fit.
 
 **Tap a bus.** Its lane is the strip one bus wide straight ahead of its nose. It is blocked by any lot bus whose body reaches into that strip, and it bounces off the nearest one.
 - If the lane is clear, the bus drives out onto the road and into the free open spot that was **emptied longest ago** (never-used spots first, left to right), so quick taps spread along the row instead of queueing for a spot that is still emptying on screen. Normal driving never uses the VIP spot or the locked spots.
@@ -83,7 +83,7 @@ On a wide PC window the portrait board stays centred and the side background fil
 2. Tap **any** bus still in the lot, even a blocked one. It teleports into the VIP spot with a sparkle and boards like any parked bus. Removing it can also free other buses' lanes.
 3. The power-up can be used whenever the VIP spot is empty. It's free for now; later it will cost coins. The button is disabled while the VIP spot is occupied.
 
-**Passengers.** Each level has an ordered queue of passengers. For each colour, the passenger count equals the total seats of that colour's buses. Up to **30** are on the loop at once. The rest wait off-screen and walk in along the top-left and top-right feeder paths whenever room frees, stepping onto the loop as their empty slot passes the end of the path (which path is purely visual).
+**Passengers.** Each level has an ordered queue of passengers. For each colour, the passenger count equals the total seats of that colour's buses. Up to **30** are on the loop at once. The rest queue on the top-left and top-right arms so the player can see who is coming (which arm is purely visual). Each arm is one continuous line streaming in from off-screen. The first loopful alternates between the arms so the loop fills fast. After that the left arm holds the first half of the remaining queue and the right arm the second half. Passengers step on in queue order, so the left arm runs completely empty before anyone on the right steps on. The one at the front of its arm waits just outside the loop wall, steps onto the first free place that passes, and the line moves up.
 
 **Boarding.** The loop circulates (one lap ≈ 5 s), and passengers leave it only through the gate at bottom centre. Every passenger reaches the gate within one lap, so the rules engine boards any matching passenger on the loop at once and only the animation waits for the gate. A passenger boards a parked, not-full bus of its colour. That includes a bus in the VIP spot. If two buses of that colour are parked, the **leftmost** fills first (VIP counts as leftmost); on screen, whoever reaches the gate first takes the leftmost one that is in its spot.
 
@@ -110,7 +110,7 @@ A parked bus shows the seats it still has to fill; the number disappears at 0 an
 {
   level: 7,
   lot: { w: 6, h: 8 },                     // lot units; y grows downward
-  buses: [ { id: 0, color: 2, size: 20, length: 2,
+  buses: [ { id: 0, color: 2, size: 6, length: 2,
              x: 1.5, y: 4, a: 45 } ],      // centre (x,y); heading a in degrees clockwise from up
   queue: [2, 0, 1, 1, ...],                // passenger colours in arrival order
   loopCapacity: 30,
@@ -153,7 +153,7 @@ The coins features later only need to change `spots` from `'locked'` to `'open'`
 3. **Assign colours**, balanced, with every colour used at least once.
 4. **Build a witness tap order**: repeatedly pick a random bus whose lane is currently clear.
 5. **Build the passenger queue** from the witness: each bus's passengers in witness order, then jittered (each passenger's sort key = position + random × `noise`). More noise means the stream lines up less well with the lot, which forces the player to buffer buses in spots, and that is the main difficulty lever.
-6. **Verify** by replaying the witness through `sim.js` using **normal taps only, no VIP**. It must end in `won`. So every level is winnable with the 4 open spots alone, and VIP is a genuine bonus, which matters once it costs coins. If verification fails, retry with the next seed. After a few failures, lower the noise.
+6. **Verify** by replaying the witness through `sim.js` using **normal taps only, no VIP**. It must end in `won`. So every level is winnable with the 4 open spots alone, and VIP is a genuine bonus, which matters once it costs coins. From level 11 the replay must also leave at least one bus waiting in a spot, so the level asks for some planning. If verification fails, retry with the next seed. After a few lost replays, lower the noise.
 7. Return the level with `solution` = the witness.
 
 **Tests** (`npm test`):
@@ -172,9 +172,9 @@ The coins features later only need to change `spots` from `'locked'` to `'open'`
 
 | Levels | Colours | Buses | Sizes | Lot (units) | Diagonal | Queue noise |
 |---|---|---|---|---|---|---|
-| 1–2 | 2 | 3–4 | 10, 20 | 3×3 | – | low |
-| 3–5 | 3 | 5–7 | 10, 20 | 3×4 | – | low |
-| 6–10 | 4 | 8–12 | + 40 | 4×6 | – | medium |
+| 1–2 | 2 | 3–4 | 4, 6 | 3×3 | – | low |
+| 3–5 | 3 | 5–7 | 4, 6 | 3×4 | – | low |
+| 6–10 | 4 | 8–12 | + 10 | 4×6 | – | medium |
 | 11–20 | 5 | 12–18 | all | 6×6 | 10% | medium |
 | 21–35 | 6 | 16–24 | all | 6×8 | 20% | high |
 | 36–60 | 7 | 22–30 | all | 7×9 | 25% | high |
@@ -201,7 +201,7 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
 - **Buses (top-down):**
   - Rounded body with a vertical gradient (light → base → dark) and a darker 3 px outline.
   - A white gloss strip, glossy windows along the sides, a windscreen at the nose and a soft drop shadow.
-  - A roof badge with the colour symbol and seats (`20`). 1-unit buses show the symbol only, nudged to the rear so the windscreen shows which way they face. Parked buses get a larger badge with the seats still to fill.
+  - A roof badge with the colour symbol only; the bus length shows its size. On 1-unit buses it is nudged to the rear so the windscreen shows which way they face. Only parked buses show a number: a larger badge with the seats still to fill.
 - **Passengers ("peeps"):** gumdrop body + round head in their colour, a gloss dot, and the colour symbol on the belly.
 - **Spots:** rounded pads with white dashed lines. VIP is gold with a star and a "VIP" label. Locked spots are grey with a padlock.
 - **VIP button:** a gold candy pill with a star. It pulses when stuck and is greyed out when the VIP spot is occupied.
@@ -288,9 +288,9 @@ Each agent gets this file as its spec plus a narrow brief: its files only, the �
 All settled:
 - Boarding: matching passengers board as they pass the gate at the bottom centre of the loop.
 - Directions: 8 headings in 45° steps; diagonal buses from level 11.
-- Lengths: 10/20/40 seats = 1/2/3 units, on a free-form lot that zooms to fit.
+- Seats and lengths: 4/6/10 seats = 1/2/3 units, on a free-form lot that zooms to fit.
 - Colour-blind symbols: on.
-- Loop: 30 on screen, fed by two paths from off-screen.
+- Loop: 30 on screen, fed by two arms that show the upcoming queue.
 - VIP: a power-up only.
 - Coins: 50, first completion of a level only.
 - Out of space: a 10 s countdown to use a power-up; game over at once if none can be used.

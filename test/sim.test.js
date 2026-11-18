@@ -1,9 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createGame, tap, useVip, laneCheck, vipAvailable, expire } from '../src/sim.js'
-import { SIZE_LENGTH, SPOTS } from '../src/config.js'
+import { SPOTS } from '../src/config.js'
 
-const bus = (color, x, y, a = 0, size = 10) => ({ color, size, length: SIZE_LENGTH[size], x, y, a })
+// Rules tests: any seat count, and every bus is 1 unit long so the geometry stays simple.
+const bus = (color, x, y, a = 0, size = 10) => ({ color, size, length: 1, x, y, a })
 const rep = (color, k) => Array(k).fill(color)
 // 1-unit buses side by side along the top, facing up, never block each other.
 const row = (colors) => colors.map((c, i) => bus(c, i + 0.5, 0.5))

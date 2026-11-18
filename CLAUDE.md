@@ -13,7 +13,8 @@ Browser puzzle game for PC and iOS Safari: tap buses out of a jammed lot into pa
   - `now` is visual time; it speeds up when more than 15 s of animation is queued.
   - `clock` is play time and drives the 10 s out-of-space countdown. Frame `dt` is capped, so a hidden tab pauses the game.
 - Boarding: the rules board every matching passenger on the loop at once. On screen, a passenger only leaves through the gate at the bottom centre. Within one run of boardings, `board()` reassigns passengers among same-colour buses so the leftmost fills first, keeping each bus's count from the rules.
-- `src/geometry.js`: the lot is free-form, measured in units (1 unit = a bus width). A bus is `{x, y, a}`: centre, plus heading in degrees clockwise from up, in 45° steps. Lengths are 10/20/40 seats = 1/2/3 units. The sim (lanes), the generator (placement) and the game (hit-test, drawing) all share this module's maths.
+- The loop's places on screen are not the rules' slots. Upcoming passengers queue on the two arms as continuous lines (`armOf`: the first loopful alternates, then the left holds the first half of the rest and the right the second half, so the left empties before the right feeds). They step on in queue order, from a waiting spot outside the wall, into the first free place passing the arm's end (`free` holds when each place frees up).
+- `src/geometry.js`: the lot is free-form, measured in units (1 unit = a bus width). A bus is `{x, y, a}`: centre, plus heading in degrees clockwise from up, in 45° steps. Lengths are 4/6/10 seats = 1/2/3 units. The sim (lanes), the generator (placement) and the game (hit-test, drawing) all share this module's maths.
 - `src/generator.js`: `generateLevel(n)` is deterministic (seeded by n). Any change to the generator, `config.js` or the rules changes every level. Saves only store level numbers, so they survive.
 - `src/config.js`: bus sizes, spots, loop capacity and the difficulty bands (lot size, bus count, diagonal share, queue noise).
 - `src/art.js`: candy drawing, pre-rendered into cached canvases. Every input that changes a sprite's look must be part of its cache key.
@@ -33,7 +34,7 @@ Browser puzzle game for PC and iOS Safari: tap buses out of a jammed lot into pa
   ```
 
   Take one screenshot first, so the pending real frame hands over to the shim.
-- `window.__bt` exposes `game` and `level`.
+- `window.__bt` exposes `game`, `level`, `joinAt` (when each passenger steps onto the loop) and `now` (visual time, the clock `joinAt` uses).
 - After editing modules, re-fetch them with `fetch(url, {cache: 'reload'})` before reloading. Otherwise cached old modules mix with new ones and the page fails to load.
 - Remove any test save (`localStorage.removeItem('busTraffic.save')`) and reset the viewport when done.
 

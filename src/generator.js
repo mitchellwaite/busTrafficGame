@@ -6,7 +6,8 @@ import { hitDistance, overlaps, inside } from './geometry.js'
 const AXIS = [0, 90, 180, 270], DIAG = [45, 135, 225, 315]
 const GAP = 0.08 // least clearance between bus bodies, in lot units
 
-// Deterministic: the same n always gives the same (deep-equal) level, verified winnable by tap only.
+// Deterministic: the same n always gives the same (deep-equal) level, verified winnable by tap only. From level 11 the
+// winning taps must also park at least one bus to wait, so the level asks for some planning.
 export function generateLevel(n) {
   const d = difficulty(n)
   let noise = d.noise
@@ -29,8 +30,9 @@ export function generateLevel(n) {
       spots: [...SPOTS],
       solution,
     }
-    if (wins(level)) return level
-    if (++fails % 3 === 0) noise *= 0.7
+    const peak = waits(level)
+    if (peak >= (n > 10 ? 1 : 0)) return level
+    if (peak < 0 && ++fails % 3 === 0) noise *= 0.7 // lose: shuffle less; too easy: just try the next seed
   }
 }
 
@@ -83,8 +85,13 @@ function removalOrder(out, rng) {
   return order
 }
 
-function wins(level) {
+// Replays the solution: the most buses ever left waiting in spots, or -1 if it does not win.
+function waits(level) {
   const { game } = createGame(level)
-  for (const id of level.solution) tap(game, id)
-  return game.status === 'won'
+  let peak = 0
+  for (const id of level.solution) {
+    tap(game, id)
+    peak = Math.max(peak, game.buses.filter((b) => b.state === 'parked').length)
+  }
+  return game.status === 'won' ? peak : -1
 }

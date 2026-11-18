@@ -32,7 +32,7 @@ document.getElementById('coin48').src = coinDataURL(48);
 document.getElementById('coin96').src = coinDataURL(96);
 
 const rad = (d) => (d * Math.PI) / 180;
-const SEATS = { 2: 10, 3: 20, 4: 40 };
+const SEATS = { 2: 4, 3: 6, 4: 10 };
 const DIRS = { up: [0, -1, 0], right: [1, 0, 90], down: [0, 1, 180], left: [-1, 0, 270] };
 function label(s, x, y, size = 15, align = 'center') {
   ctx.font = `700 ${size}px system-ui, sans-serif`;

@@ -11,9 +11,9 @@ const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = 
 
 // Design space: 720 wide; height H >= 1280 follows the screen aspect and the extra goes to the lot.
 // BAR = room kept under the lot for the power-up buttons (#powerups).
-const W = 720, ROAD = 40, LOT_TOP = 556, BAR = 110, TRACK = 46, PEEP_R = 16
-const LOOP = { x: 110, y: 136, w: 500, h: 220 }
-const SPOT_Y = 432, SPOT_W = 76, SPOT_H = 112, SPOT_CY = SPOT_Y + SPOT_H / 2, LANE_Y = 412
+const W = 720, ROAD = 40, LOT_TOP = 536, BAR = 110, TRACK = 46, PEEP_R = 16
+const LOOP = { x: 155, y: 136, w: 410, h: 200 } // centreline ~1048 px: 30 passengers sit ~35 px apart
+const SPOT_Y = 412, SPOT_W = 76, SPOT_H = 112, SPOT_CY = SPOT_Y + SPOT_H / 2, LANE_Y = 392
 const PARK_W = 48, PARK_LEN = { 1: 56, 2: 82, 3: 106 }, BADGE = 64 // parked bus size by length in lot units; its badge
 // Boarding: OUT s to step down through the gate to EXIT_Y (clear of the wall), then a HOP s leap into the bus whose
 // arc is low enough that it never rises back over the wall.
@@ -27,9 +27,9 @@ const frac = (u) => u - Math.floor(u)
 const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 // now = visual time (drives all animation), clock = play time (drives the stuck countdown), real = last frame's wall time.
 let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0
-let vis, peeps, sparks, timers, slotFree, spotFree, picking, stuckAt, hint, gained
+let vis, peeps, sparks, timers, free, joinAt, armStart, spotFree, picking, stuckAt, hint, gained
 
-window.__bt = { get game() { return game }, get level() { return level } }
+window.__bt = { get game() { return game }, get level() { return level }, get joinAt() { return joinAt }, get now() { return now } } // for testing
 
 export function init(h) {
   hooks = h
@@ -53,7 +53,9 @@ export function start(n) {
   peeps = new Map()
   sparks = []
   timers = []
-  slotFree = []
+  free = game.loop.map(() => 0) // per place on the loop: when it is free to take, Infinity while taken
+  joinAt = [] // per passenger: when it steps from its arm onto the loop
+  armStart = [0, 0] // per arm: no passenger before this one is still drawn there
   spotFree = []
   picking = false
   stuckAt = null
@@ -134,12 +136,31 @@ function pose(pts, d) {
   return { x, y, a: Math.atan2(x1 - x0, y0 - y1) }
 }
 
-// Feeder paths from off-screen top-left / top-right to the loop's left / right ends (loop params 0.75 / 0.25).
+// Arms: queue paths from off-screen top-left / top-right, down the sides and into the loop's left / right ends
+// (loop params 0.75 / 0.25). Passengers wait on them GAP apart, the front one WAIT back from the loop's centreline
+// (clear of the riders); moving up one place takes STEP and stepping onto the loop JOIN_T.
 const bez = (a, c, b) => Array.from({ length: 13 }, (_, i) => [0, 1].map((k) => (1 - i / 12) ** 2 * a[k] + 2 * (i / 12) * (1 - i / 12) * c[k] + (i / 12) ** 2 * b[k]))
-const MID = LOOP.y + LOOP.h / 2
-const FEEDERS = [bez([-40, 110], [40, MID], [LOOP.x, MID]), bez([W + 40, 110], [W - 40, MID], [LOOP.x + LOOP.w, MID])]
-const FEED = FEEDERS.map((pts, i) => ({ pts, len: pathLen(pts), at: i ? 0.25 : 0.75 }))
-const SPEED = (2 * (LOOP.w - LOOP.h) + Math.PI * LOOP.h) / LAP // centreline px per second
+const toward = (b, a, r) => [0, 1].map((k) => b[k] + ((a[k] - b[k]) * r) / Math.hypot(a[0] - b[0], a[1] - b[1]))
+// Polyline with each inner corner rounded off by a quadratic curve.
+const rounded = (pts, r) => [pts[0], ...pts.slice(1, -1).flatMap((b, i) => bez(toward(b, pts[i], r), b, toward(b, pts[i + 2], r))), pts.at(-1)]
+// STEP + JOIN_T stays under LAP / 30 (a place passes every ~0.17 s) so an arm can fill consecutive free places.
+const MID = LOOP.y + LOOP.h / 2, GAP = 34, STEP = 0.1, JOIN_T = 0.06, WAIT = 36
+const ARM = [[-60, 135], [52, 135], [52, MID], [LOOP.x, MID]]
+const FEEDERS = [rounded(ARM, 40), rounded(ARM.map(([x, y]) => [W - x, y]), 40)]
+const ARMS = FEEDERS.map((pts, i) => ({ pts, len: pathLen(pts), at: i ? 0.25 : 0.75 }))
+// Which arm a passenger queues on (0 left, 1 right); each arm is one continuous line streaming in from off-screen.
+// The first loopful alternates so the loop fills fast from both. After that the left arm holds the first half of the
+// queue and the right arm the rest; passengers step on in queue order, so the left arm is empty before anyone on the
+// right steps on.
+const armOf = (id) => {
+  const cap = game.loop.length
+  return id < cap ? id % 2 : +(id >= cap + Math.ceil((game.passengers.length - cap) / 2))
+}
+const prevOnArm = (side, id) => {
+  let j = id - 1
+  while (j >= 0 && armOf(j) !== side) j--
+  return j
+}
 
 const slotPos = (s) => loopPoint(LOOP, s / game.loop.length + now / LAP)
 // Earliest time >= t0 at which slot s is at loop param `at`.
@@ -174,10 +195,20 @@ function play(events) {
       sparks.push({ x: p.x, y: p.y, t: T }, { x: spotX(e.spot), y: SPOT_CY, t: appear - 0.1 })
       end = Math.max(end, (v.ready = appear + 0.25))
     } else if (e.type === 'enter') {
-      // Walk in along whichever feeder this slot reaches first, timed to step on as the slot passes the feeder's end.
-      const t0 = Math.max(T, slotFree[e.slot] || 0)
-      const [join, feed] = FEED.map((f, i) => [nextAt(e.slot, f.at, t0 + f.len / SPEED), i]).sort((a, b) => a[0] - b[0])[0]
-      peeps.set(e.passenger, { color: e.color, slot: e.slot, join, feed })
+      // In queue order, once at the front of its arm, a passenger steps onto the first free place on the loop that
+      // passes the arm's end. Places on screen are not the rules' slots: only the count matters to the rules, and a
+      // passenger needs a place only until it boards.
+      const side = armOf(e.passenger), arm = ARMS[side]
+      const ahead = joinAt[prevOnArm(side, e.passenger)] ?? -Infinity
+      const ready = Math.max(T, joinAt[e.passenger - 1] ?? -Infinity, ahead + STEP + JOIN_T)
+      let slot = -1, join = Infinity
+      free.forEach((f, k) => {
+        const t = f < Infinity ? nextAt(k, arm.at, Math.max(ready, f)) : Infinity
+        if (t < join) [slot, join] = [k, t]
+      })
+      free[slot] = Infinity
+      joinAt[e.passenger] = join
+      peeps.set(e.passenger, { color: e.color, slot, join })
       end = Math.max(end, join)
     } else if (e.type === 'depart') {
       const t = Math.max(...v.landings) + 0.15, path = departPath(e.spot)
@@ -215,7 +246,7 @@ function board(run) {
       seats.set(id, seats.get(id) - 1)
       pax.splice(pax.indexOf(p), 1)
       p.hop = { t, spot: vis[id].spot }
-      slotFree[p.slot] = t
+      free[p.slot] = t
       vis[id].landings.push(t + OUT + HOP)
       end = Math.max(end, t + OUT + HOP)
     }
@@ -311,7 +342,7 @@ function dom() {
   vipBtn.classList.toggle('pulse', stuckAt !== null)
   vipBtn.classList.toggle('on', picking)
   text($('banner'), stuckAt !== null ? `Out of space!\nUse a power-up: ${Math.max(0, Math.ceil(stuckAt - clock - 1e-6))}` : '')
-  text($('hint'), picking ? 'Tap a bus to send it to VIP' : hint ? 'Tap a bus to drive it out!' : '')
+  text($('hint'), picking ? 'Pick a bus for VIP' : hint ? 'Tap a bus to drive it out!' : '')
 }
 
 // ---------- drawing ----------
@@ -349,7 +380,6 @@ function scaled(x, y, k, alpha, draw) {
 
 function drawOne(b, v, ph) {
   const w = BUS_W * cell, len = (b.length - BUS_PAD) * cell, plen = PARK_LEN[b.length]
-  const tag = b.length > 1 ? b.size : '' // 1-unit buses are always 10s; a symbol-only badge keeps their windscreen visible
   // seats still to fill before it leaves; blank once full
   const seats = () => b.size - v.landings.filter((t) => t <= now).length || ''
   // Parked-size buses carry a big badge (seats still to fill) so the count reads on a phone.
@@ -367,11 +397,11 @@ function drawOne(b, v, ph) {
     const d = m.len * (1 - (1 - clamp01(tw / m.dur)) ** 2), p = pose(m.path, d)
     const k = 1 + (PARK_W / w - 1) * clamp01(d / m.first), fade = clamp01((d - m.len + m.last) / m.last)
     // shrink to parked width on the way out of the lot, cross-fade to the parked sprite on the way into the spot
-    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, tag))
+    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, ''))
     if (fade > 0) scaled(p.x, p.y, 1, fade, () => parked(0, 0, p.a, seats()))
     return
   }
-  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, tag))
+  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, ''))
   if (ph === 'appear') {
     const u = clamp01((now - v.tp.appear) / 0.25) - 1 // ease-out-back pop
     return scaled(spotX(v.spot), SPOT_CY, 1 + 2.7 * u ** 3 + 1.7 * u ** 2, 1, () => parked(0, 0, 0, seats()))
@@ -396,12 +426,37 @@ function drawOne(b, v, ph) {
     ctx.fillRect(-hw, -hl, 2 * hw, 2 * hl)
     ctx.restore()
   }
-  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, tag)
+  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, '')
 }
 
-// Loop and feeder peeps (hopping=false) or peeps hopping from the gate into buses (hopping=true), lower ones on top.
+// The upcoming queue on each arm: everyone not yet on the loop, including passengers the rules have not let in yet,
+// packed GAP apart back from the waiting spot. The front one steps from there onto its place over JOIN_T; then its
+// gap closes over STEP and the line moves up.
+function armPeeps() {
+  const list = [], q = game.passengers
+  ARMS.forEach((arm, side) => {
+    for (let id = armStart[side], d = WAIT; id < q.length && d <= arm.len; id++) {
+      const j = armOf(id) === side ? joinAt[id] ?? Infinity : -Infinity
+      if (j + STEP <= now) {
+        if (id === armStart[side]) armStart[side]++
+        continue
+      }
+      if (now < j) {
+        const [x, y] = along(arm.pts, arm.len - d), u = (now - j + JOIN_T) / JOIN_T
+        if (u > 0) {
+          const s = slotPos(peeps.get(id).slot)
+          list.push([x + (s.x - x) * u, y + (s.y - y) * u, 1, q[id]])
+        } else list.push([x, y - Math.abs(Math.sin(((d - WAIT) * Math.PI) / GAP)) * 4, 1, q[id]]) // a hop per place moved up
+      }
+      d += now < j ? GAP : GAP * (1 - (now - j) / STEP)
+    }
+  })
+  return list
+}
+
+// Peeps on the arms and the loop (hopping=false) or hopping from the gate into buses (hopping=true), lower ones on top.
 function drawPeeps(hopping) {
-  const list = []
+  const list = hopping ? [] : armPeeps()
   for (const [id, p] of peeps) {
     const h = p.hop && now >= p.hop.t ? (now - p.hop.t) / (OUT + HOP) : -1
     if (h >= 1) peeps.delete(id)
@@ -412,15 +467,9 @@ function drawPeeps(hopping) {
       else list.push([GATE_PT.x + (tx - GATE_PT.x) * u, EXIT_Y + (SPOT_CY - EXIT_Y) * u - Math.sin(u * Math.PI) * 22, 1 - 0.45 * u, p.color])
       continue
     }
-    const f = FEED[p.feed], ahead = (p.join - now) * SPEED // distance still to walk along the feeder
-    if (ahead > f.len) continue
-    if (ahead > 0) {
-      const [x, y] = along(f.pts, f.len - ahead)
-      list.push([x, y - Math.abs(Math.sin(ahead * 0.15)) * 5, 1, p.color])
-    } else {
-      const s = slotPos(p.slot)
-      list.push([s.x, s.y, 1, p.color])
-    }
+    if (now < p.join) continue // still on its arm
+    const s = slotPos(p.slot)
+    list.push([s.x, s.y, 1, p.color])
   }
   list.sort((a, b) => a[1] - b[1])
   for (const [x, y, k, c] of list) k === 1 ? drawPeep(ctx, x, y, PEEP_R, c) : scaled(x, y, k, 1, () => drawPeep(ctx, 0, 0, PEEP_R, c))

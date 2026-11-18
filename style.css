@@ -104,20 +104,20 @@ body { font-family: var(--font); color: var(--ink); }
 }
 /* message area inside the loop */
 #msg {
-  position: absolute; left: 150px; right: 150px; top: 176px; height: 140px;
+  position: absolute; left: 170px; right: 170px; top: 172px; height: 130px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   text-align: center; font-weight: 800;
 }
 #banner {
   padding: 10px 24px; border-radius: 30px;
-  font-size: 28px; line-height: 1.2; white-space: pre-line; color: #fff;
+  font-size: 24px; line-height: 1.2; white-space: pre-line; color: #fff;
   background: linear-gradient(#FF8FA3, #FF4D6D 60%, #D9304F);
   box-shadow: 0 5px 0 #A61E3A, 0 10px 16px rgba(60, 30, 100, 0.25);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
 }
 #hint {
   padding: 8px 22px; border-radius: 30px;
-  font-size: 28px;
+  font-size: 22px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 4px 12px rgba(60, 30, 100, 0.15);
 }
