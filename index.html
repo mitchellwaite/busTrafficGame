@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Bus Traffic">
+<meta name="theme-color" content="#FFE3F0">
+<title>Bus Traffic</title>
+<link rel="apple-touch-icon" id="icon">
+<link rel="stylesheet" href="style.css">
+<script type="module" src="src/main.js"></script>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="safe"></div>
+<div id="stage">
+  <section id="home" class="screen">
+    <h1>Bus Traffic</h1>
+    <div class="cap">LEVEL</div>
+    <div class="picker">
+      <button id="prev" class="btn blue round" aria-label="Previous level">◀&#xFE0E;</button>
+      <div id="levelNum">1</div>
+      <button id="next" class="btn blue round" aria-label="Next level">▶&#xFE0E;</button>
+    </div>
+    <button id="play" class="btn green big">PLAY</button>
+  </section>
+
+  <section id="level" class="screen" hidden>
+    <div class="hud">
+      <button id="homeBtn" class="btn blue round" aria-label="Home">⌂</button>
+      <button id="restartBtn" class="btn blue round" aria-label="Restart">↻</button>
+    </div>
+    <div id="levelLabel"></div>
+    <div id="msg"><div id="banner"></div><div id="hint"></div></div>
+    <button id="vip" class="btn gold">★ VIP</button>
+  </section>
+
+  <div id="overlay" hidden>
+    <div class="panel">
+      <h2 id="ovTitle"></h2>
+      <p id="ovCoins">+50 <img class="coin" alt="coins"></p>
+      <div class="row">
+        <button id="ovA" class="btn green"></button>
+        <button id="ovB" class="btn blue">Home</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="coins"><img class="coin" alt="coins"><span id="coinNum">0</span></div>
+</div>
+</body>
+</html>
