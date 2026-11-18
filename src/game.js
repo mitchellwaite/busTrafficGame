@@ -1,27 +1,33 @@
 // Level screen (PLAN.md §3-§5): layout, input/hit-test, VIP pick mode and animation.
 // The sim settles instantly; play() schedules its events on a timeline and the visuals catch up to the sim state.
-import { createGame, tap, useVip, vipAvailable, expire, DIRS } from './sim.js'
+import { createGame, tap, useVip, vipAvailable, expire } from './sim.js'
+import { heading } from './geometry.js'
+import { BUS_W, BUS_PAD } from './config.js'
 import { generateLevel } from './generator.js'
-import { drawBackground, drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawPeep, drawSparkle } from './art.js'
+import { drawBackground, drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle } from './art.js'
 
 const $ = (id) => document.getElementById(id)
 const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = $('vip')
 
 // Design space: 720 wide; height H >= 1280 follows the screen aspect and the extra goes to the lot.
-const W = 720, ROAD = 40, LOT_TOP = 628, TRACK = 46, PEEP_R = 16
-const LOOP = { x: 40, y: 124, w: 640, h: 240 }
-const SPOT_Y = 424, SPOT_W = 76, SPOT_H = 112, SPOT_CY = SPOT_Y + SPOT_H / 2, LANE_Y = 402
-const PARK_W = 36, PARK_LEN = { 2: 64, 3: 84, 4: 100 }
-const ENTRY = [[-30, 112], [W + 30, 112]]
-const ANGLE = { up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 }
-const WALK = 0.7, HOP = 0.38, SPARK = 0.6, COUNTDOWN = 10
+// BAR = room kept under the lot for the power-up buttons (#powerups).
+const W = 720, ROAD = 40, LOT_TOP = 556, BAR = 110, TRACK = 46, PEEP_R = 16
+const LOOP = { x: 110, y: 136, w: 500, h: 220 }
+const SPOT_Y = 432, SPOT_W = 76, SPOT_H = 112, SPOT_CY = SPOT_Y + SPOT_H / 2, LANE_Y = 412
+const PARK_W = 48, PARK_LEN = { 1: 56, 2: 82, 3: 106 }, BADGE = 64 // parked bus size by length in lot units; its badge
+// Boarding: OUT s to step down through the gate to EXIT_Y (clear of the wall), then a HOP s leap into the bus whose
+// arc is low enough that it never rises back over the wall.
+const OUT = 0.12, HOP = 0.38, SPARK = 0.6, COUNTDOWN = 10
+const LAP = 5 // seconds per lap of the loop; passengers walk the feeders at the same pace
+const GATE = 0.5, GATE_PT = loopPoint(LOOP, GATE), EXIT_Y = GATE_PT.y + 52 // loop param of the boarding gate (bottom centre)
 const spotX = (i) => 66 + 84 * i
 const clamp01 = (u) => Math.min(1, Math.max(0, u))
+const frac = (u) => u - Math.floor(u)
 
 const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 // now = visual time (drives all animation), clock = play time (drives the stuck countdown), real = last frame's wall time.
 let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0
-let vis, peeps, sparks, timers, slotFree, spotFree, side, picking, stuckAt, hint, gained
+let vis, peeps, sparks, timers, slotFree, spotFree, picking, stuckAt, hint, gained
 
 window.__bt = { get game() { return game }, get level() { return level } }
 
@@ -49,7 +55,6 @@ export function start(n) {
   timers = []
   slotFree = []
   spotFree = []
-  side = 0
   picking = false
   stuckAt = null
   gained = null
@@ -80,29 +85,31 @@ function fit() {
   if (level) layout()
 }
 
+// The lot zooms to fit its area: lots with more buses are more units across, so each unit gets fewer px.
 function layout() {
-  const { cols, rows } = level.grid, top = LOT_TOP + ROAD, h = view.H - 16 - ROAD - top
-  cell = Math.floor(Math.min((W - 20 - 2 * ROAD) / cols, h / rows, 120))
-  lot = { x: Math.round((W - cols * cell) / 2), y: Math.round(top + (h - rows * cell) / 2), w: cols * cell, h: rows * cell }
+  const { w, h } = level.lot, top = LOT_TOP + ROAD, room = view.H - BAR - ROAD - top
+  cell = Math.floor(Math.min((W - 20 - 2 * ROAD) / w, room / h, 120))
+  lot = { x: Math.round((W - w * cell) / 2), y: Math.round(top + (room - h * cell) / 2), w: w * cell, h: h * cell }
 }
 
-function lotPose(b) {
-  const [dx, dy] = DIRS[b.dir], k = (b.length - 1) / 2
-  return { x: lot.x + (b.col + 0.5 - dx * k) * cell, y: lot.y + (b.row + 0.5 - dy * k) * cell, a: ANGLE[b.dir] }
-}
+const lotPose = (b) => ({ x: lot.x + b.x * cell, y: lot.y + b.y * cell, a: (b.a * Math.PI) / 180 })
 
-// Straight out of the lot onto the road centreline, round the ring to the top road, then up into the spot.
+// Straight ahead out of the lot onto the road centreline, the short way round the ring to the top road, then up into the spot.
 function parkPath(b, spot) {
-  const p = lotPose(b), L = lot.x - ROAD / 2, R = lot.x + lot.w + ROAD / 2, T = lot.y - ROAD / 2, B = lot.y + lot.h + ROAD / 2
-  const sx = spotX(spot), pts = [[p.x, p.y]]
-  if (b.dir === 'left') pts.push([L, p.y], [L, T])
-  else if (b.dir === 'right') pts.push([R, p.y], [R, T])
-  else if (b.dir === 'down') {
-    const e = Math.abs(p.x - L) + Math.abs(sx - L) < Math.abs(p.x - R) + Math.abs(sx - R) ? L : R
-    pts.push([p.x, B], [e, B], [e, T])
-  } else pts.push([p.x, T])
-  pts.push([sx, T], [sx, SPOT_CY])
-  return pts
+  const p = lotPose(b), [dx, dy] = heading(b.a)
+  const L = lot.x - ROAD / 2, R = lot.x + lot.w + ROAD / 2, T = lot.y - ROAD / 2, B = lot.y + lot.h + ROAD / 2
+  const reach = (d, lo, hi, from) => (d > 1e-9 ? (hi - from) / d : d < -1e-9 ? (lo - from) / d : Infinity)
+  const k = Math.min(reach(dx, L, R, p.x), reach(dy, T, B, p.y)), out = [p.x + dx * k, p.y + dy * k], to = [spotX(spot), T]
+  // ring positions, measured clockwise from the top-left corner
+  const Wr = R - L, Hr = B - T, P = 2 * (Wr + Hr), near = (u, v) => Math.abs(u - v) < 1e-6
+  const pos = ([x, y]) => (near(y, T) ? x - L : near(x, R) ? Wr + y - T : near(y, B) ? Wr + Hr + R - x : 2 * Wr + Hr + B - y)
+  const cw = frac((pos(to) - pos(out)) / P) * P, dir = cw <= P / 2 ? 1 : -1, len = dir > 0 ? cw : P - cw
+  const turns = [[L, T, 0], [R, T, Wr], [R, B, Wr + Hr], [L, B, 2 * Wr + Hr]]
+    .map(([x, y, at]) => [x, y, frac((dir * (at - pos(out))) / P) * P])
+    .filter(([, , d]) => d > 1e-6 && d < len - 1e-6)
+    .sort((m, n) => m[2] - n[2])
+    .map(([x, y]) => [x, y])
+  return [[p.x, p.y], out, ...turns, to, [to[0], SPOT_CY]]
 }
 
 // Pull forward (up) out of the spot into the lane above the spots, then off the nearest side.
@@ -127,18 +134,31 @@ function pose(pts, d) {
   return { x, y, a: Math.atan2(x1 - x0, y0 - y1) }
 }
 
-const slotPos = (s) => loopPoint(LOOP, s / game.loop.length + now * 0.006) // slow cosmetic circulation
+// Feeder paths from off-screen top-left / top-right to the loop's left / right ends (loop params 0.75 / 0.25).
+const bez = (a, c, b) => Array.from({ length: 13 }, (_, i) => [0, 1].map((k) => (1 - i / 12) ** 2 * a[k] + 2 * (i / 12) * (1 - i / 12) * c[k] + (i / 12) ** 2 * b[k]))
+const MID = LOOP.y + LOOP.h / 2
+const FEEDERS = [bez([-40, 110], [40, MID], [LOOP.x, MID]), bez([W + 40, 110], [W - 40, MID], [LOOP.x + LOOP.w, MID])]
+const FEED = FEEDERS.map((pts, i) => ({ pts, len: pathLen(pts), at: i ? 0.25 : 0.75 }))
+const SPEED = (2 * (LOOP.w - LOOP.h) + Math.PI * LOOP.h) / LAP // centreline px per second
+
+const slotPos = (s) => loopPoint(LOOP, s / game.loop.length + now / LAP)
+// Earliest time >= t0 at which slot s is at loop param `at`.
+const nextAt = (s, at, t0) => t0 + frac(at - s / game.loop.length - t0 / LAP) * LAP
 
 // ---------- events -> timeline ----------
 
 function play(events) {
-  // Big chains get tighter staggers and faster walks/hops so they stay within a few seconds.
-  const T = now, gap = Math.min(0.08, Math.max(0.015, 2 / events.length)), f = Math.min(1, Math.max(0.5, 60 / events.length))
-  let enterAt = T, end = T
+  const T = now
+  let end = T, run = []
   for (const e of events) {
+    if (e.type === 'board') {
+      run.push(e)
+      continue
+    }
+    if (run.length) [end, run] = [Math.max(end, board(run)), []]
     const v = vis[e.bus], b = game.buses[e.bus]
     if (e.type === 'bounce') {
-      v.bounce = { t: T, d: e.freeCells * cell + 12, dur: 0.09 + 0.05 * e.freeCells }
+      v.bounce = { t: T, d: e.free * cell + 2, dur: 0.09 + 0.05 * e.free }
       vis[e.blocker].wobble = T + v.bounce.dur
     } else if (e.type === 'park') {
       const path = parkPath(b, e.spot), len = pathLen(path), last = path.at(-2)[1] - SPOT_CY
@@ -154,24 +174,53 @@ function play(events) {
       sparks.push({ x: p.x, y: p.y, t: T }, { x: spotX(e.spot), y: SPOT_CY, t: appear - 0.1 })
       end = Math.max(end, (v.ready = appear + 0.25))
     } else if (e.type === 'enter') {
-      const t = Math.max(enterAt, slotFree[e.slot] || 0)
-      enterAt += gap
-      peeps.set(e.passenger, { color: e.color, slot: e.slot, t, w: WALK * f, side: (side ^= 1) })
-      end = Math.max(end, t + WALK * f)
-    } else if (e.type === 'board') {
-      const p = peeps.get(e.passenger), t = Math.max(v.ready, p.t + p.w, (v.lastBoard || 0) + Math.min(gap, 1.2 / b.size))
-      p.hop = { t, d: HOP * f, spot: e.spot }
-      v.lastBoard = slotFree[p.slot] = t
-      v.landings.push(t + HOP * f)
-      end = Math.max(end, t + HOP * f)
+      // Walk in along whichever feeder this slot reaches first, timed to step on as the slot passes the feeder's end.
+      const t0 = Math.max(T, slotFree[e.slot] || 0)
+      const [join, feed] = FEED.map((f, i) => [nextAt(e.slot, f.at, t0 + f.len / SPEED), i]).sort((a, b) => a[0] - b[0])[0]
+      peeps.set(e.passenger, { color: e.color, slot: e.slot, join, feed })
+      end = Math.max(end, join)
     } else if (e.type === 'depart') {
       const t = Math.max(...v.landings) + 0.15, path = departPath(e.spot)
       v.depart = { t, path, len: pathLen(path), dur: 0.8 }
       spotFree[e.spot] = t + 0.3
       end = Math.max(end, t + 0.8)
-    } else timers.push({ at: end + 0.2, type: e.type }) // won | lost | stuck: once everything before it has landed
+    } else timers.push({ at: Math.max(end, animEnd) + 0.2, type: e.type }) // won | lost | stuck: once every bus, from this tap or earlier ones, has finished
   }
+  if (run.length) end = Math.max(end, board(run))
   animEnd = Math.max(animEnd, end)
+}
+
+// A run of boardings. The rules board at once and fix how many seats each bus fills; on screen a passenger
+// leaves only through the gate, and whoever reaches it first takes the leftmost bus of its colour that is in
+// its spot with seats left in this run. Returns when the last one lands.
+function board(run) {
+  let end = 0
+  const groups = new Map()
+  for (const e of run) {
+    const c = game.buses[e.bus].color
+    if (!groups.has(c)) groups.set(c, { pax: [], seats: new Map() })
+    const g = groups.get(c)
+    g.pax.push(peeps.get(e.passenger))
+    g.seats.set(e.bus, (g.seats.get(e.bus) || 0) + 1)
+  }
+  for (const { pax, seats } of groups.values()) {
+    while (pax.length) {
+      const open = [...seats.keys()].filter((id) => seats.get(id) > 0), ready = Math.min(...open.map((id) => vis[id].ready))
+      let p = null, t = Infinity
+      for (const q of pax) {
+        const tq = nextAt(q.slot, GATE, Math.max(q.join, ready))
+        if (tq < t) [p, t] = [q, tq]
+      }
+      const id = open.filter((i) => vis[i].ready <= t).sort((m, n) => vis[m].spot - vis[n].spot)[0]
+      seats.set(id, seats.get(id) - 1)
+      pax.splice(pax.indexOf(p), 1)
+      p.hop = { t, spot: vis[id].spot }
+      slotFree[p.slot] = t
+      vis[id].landings.push(t + OUT + HOP)
+      end = Math.max(end, t + OUT + HOP)
+    }
+  }
+  return end
 }
 
 // ---------- input ----------
@@ -192,13 +241,13 @@ function onDown(e) {
   play(events)
 }
 
-// Nearest lot bus whose cells are within a padding of the point; null if none or it is mid-bounce.
+// Nearest lot bus whose body is within a padding (at least 12 CSS px) of the point; null if none or it is mid-bounce.
 function hit(x, y) {
-  let best = null, bd = cell * 0.3
+  let best = null, bd = Math.max(cell * 0.3, 12 / view.s)
   for (const b of game.buses) {
     if (b.state !== 'lot') continue
-    const p = lotPose(b), [dx, dy] = DIRS[b.dir]
-    const d = Math.hypot(Math.max(0, Math.abs(x - p.x) - ((dx ? b.length : 1) * cell) / 2), Math.max(0, Math.abs(y - p.y) - ((dy ? b.length : 1) * cell) / 2))
+    const p = lotPose(b), [dx, dy] = heading(b.a), u = (x - p.x) * dx + (y - p.y) * dy, v = (y - p.y) * dx - (x - p.x) * dy
+    const d = Math.hypot(Math.max(0, Math.abs(u) - ((b.length - BUS_PAD) * cell) / 2), Math.max(0, Math.abs(v) - (BUS_W * cell) / 2))
     if (d < bd) [best, bd] = [b, d]
   }
   const bo = best && vis[best.id].bounce
@@ -213,8 +262,8 @@ function frame() {
   const t = performance.now() / 1000, dt = Math.min(0.1, t - real)
   real = t
   clock += dt
-  // Visual time runs faster while more than 3 s of animation is queued, so fast tapping never leaves the board far behind.
-  now += dt * (1 + Math.max(0, animEnd - now - 3))
+  // Visual time speeds up while more than 15 s of animation is queued, so fast tapping never leaves the board far behind.
+  now += dt * (1 + Math.max(0, animEnd - now - 15) / 5)
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0)
   drawBackground(ctx, view.w, view.h)
   if (!game) return
@@ -261,7 +310,7 @@ function dom() {
   vipBtn.disabled = !ok
   vipBtn.classList.toggle('pulse', stuckAt !== null)
   vipBtn.classList.toggle('on', picking)
-  text($('banner'), stuckAt !== null ? `Out of space! Use a power-up: ${Math.max(0, Math.ceil(stuckAt - clock))}` : '')
+  text($('banner'), stuckAt !== null ? `Out of space!\nUse a power-up: ${Math.max(0, Math.ceil(stuckAt - clock - 1e-6))}` : '')
   text($('hint'), picking ? 'Tap a bus to send it to VIP' : hint ? 'Tap a bus to drive it out!' : '')
 }
 
@@ -271,9 +320,9 @@ function drawLevel() {
   ctx.beginPath()
   ctx.rect(0, 0, W, view.H)
   ctx.clip()
-  drawLoop(ctx, LOOP, TRACK)
+  drawLoop(ctx, LOOP, TRACK, FEEDERS)
   drawPeeps(false)
-  drawLot(ctx, lot, level.grid.cols, level.grid.rows, ROAD)
+  drawLot(ctx, lot, ROAD)
   game.spots.forEach((sp, i) => drawSpot(ctx, spotX(i) - SPOT_W / 2, SPOT_Y, SPOT_W, SPOT_H, sp.type))
   const phases = vis.map(phase), layerOf = (ph) => (ph === 'lot' ? 0 : ph === 'parked' ? 1 : 2)
   for (const layer of [0, 1, 2]) game.buses.forEach((b, i) => phases[i] && layerOf(phases[i]) === layer && drawOne(b, vis[i], phases[i]))
@@ -299,28 +348,35 @@ function scaled(x, y, k, alpha, draw) {
 }
 
 function drawOne(b, v, ph) {
-  const w = cell - 12, len = b.length * cell - 12, plen = PARK_LEN[b.length]
-  const seats = () => `${v.landings.filter((t) => t <= now).length}/${b.size}`
-  if (ph === 'parked') return drawBus(ctx, spotX(v.spot), SPOT_CY, PARK_W, plen, 0, b.color, seats())
+  const w = BUS_W * cell, len = (b.length - BUS_PAD) * cell, plen = PARK_LEN[b.length]
+  const tag = b.length > 1 ? b.size : '' // 1-unit buses are always 10s; a symbol-only badge keeps their windscreen visible
+  // seats still to fill before it leaves; blank once full
+  const seats = () => b.size - v.landings.filter((t) => t <= now).length || ''
+  // Parked-size buses carry a big badge (seats still to fill) so the count reads on a phone.
+  const parked = (x, y, a, label) => {
+    drawBus(ctx, x, y, PARK_W, plen, a, b.color, null)
+    drawBadge(ctx, x, y, BADGE, b.color, label)
+  }
+  if (ph === 'parked') return parked(spotX(v.spot), SPOT_CY, 0, seats())
   if (ph === 'leave') {
     const m = v.depart, u = clamp01((now - m.t) / m.dur), p = pose(m.path, m.len * u * u)
-    return drawBus(ctx, p.x, p.y, PARK_W, plen, p.a, b.color, `${b.size}/${b.size}`)
+    return parked(p.x, p.y, p.a, '')
   }
   if (ph === 'drive') {
     const m = v.move, el = now - m.t, tw = el < m.tHold ? el : Math.max(m.tHold, el - m.hold)
     const d = m.len * (1 - (1 - clamp01(tw / m.dur)) ** 2), p = pose(m.path, d)
     const k = 1 + (PARK_W / w - 1) * clamp01(d / m.first), fade = clamp01((d - m.len + m.last) / m.last)
     // shrink to parked width on the way out of the lot, cross-fade to the parked sprite on the way into the spot
-    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, b.size))
-    if (fade > 0) scaled(p.x, p.y, 1, fade, () => drawBus(ctx, 0, 0, PARK_W, plen, p.a, b.color, seats()))
+    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, tag))
+    if (fade > 0) scaled(p.x, p.y, 1, fade, () => parked(0, 0, p.a, seats()))
     return
   }
-  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, b.size))
+  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, tag))
   if (ph === 'appear') {
     const u = clamp01((now - v.tp.appear) / 0.25) - 1 // ease-out-back pop
-    return scaled(spotX(v.spot), SPOT_CY, 1 + 2.7 * u ** 3 + 1.7 * u ** 2, 1, () => drawBus(ctx, 0, 0, PARK_W, plen, 0, b.color, seats()))
+    return scaled(spotX(v.spot), SPOT_CY, 1 + 2.7 * u ** 3 + 1.7 * u ** 2, 1, () => parked(0, 0, 0, seats()))
   }
-  const p = lotPose(b), [dx, dy] = DIRS[b.dir]
+  const p = lotPose(b), [dx, dy] = heading(b.a)
   let off = 0, a = p.a
   if (v.bounce) {
     const u = (now - v.bounce.t) / v.bounce.dur, r = u - 1
@@ -329,35 +385,41 @@ function drawOne(b, v, ph) {
   const wt = now - (v.wobble ?? -9)
   if (wt >= 0 && wt < 0.45) a += 0.09 * Math.sin(wt * 40) * (1 - wt / 0.45)
   if (picking) {
-    const hw = ((dx ? b.length : 1) * cell) / 2 - 8, hh = ((dy ? b.length : 1) * cell) / 2 - 8
+    const hw = w / 2 - 2, hl = len / 2 - 2
+    ctx.save()
+    ctx.translate(p.x, p.y)
+    ctx.rotate(p.a)
     ctx.fillStyle = ctx.strokeStyle = `rgba(255,210,63,${0.6 + 0.3 * Math.sin(now * 7)})`
     ctx.lineWidth = 12
     ctx.lineJoin = 'round' // rounded halo without roundRect (iOS 15)
-    ctx.strokeRect(p.x - hw, p.y - hh, 2 * hw, 2 * hh)
-    ctx.fillRect(p.x - hw, p.y - hh, 2 * hw, 2 * hh)
+    ctx.strokeRect(-hw, -hl, 2 * hw, 2 * hl)
+    ctx.fillRect(-hw, -hl, 2 * hw, 2 * hl)
+    ctx.restore()
   }
-  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, b.size)
+  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, tag)
 }
 
-// Loop and walking-in peeps (hopping=false) or peeps hopping into buses (hopping=true), lower ones on top.
+// Loop and feeder peeps (hopping=false) or peeps hopping from the gate into buses (hopping=true), lower ones on top.
 function drawPeeps(hopping) {
   const list = []
   for (const [id, p] of peeps) {
-    if (now < p.t) continue
-    const h = p.hop && now >= p.hop.t ? (now - p.hop.t) / p.hop.d : -1
+    const h = p.hop && now >= p.hop.t ? (now - p.hop.t) / (OUT + HOP) : -1
     if (h >= 1) peeps.delete(id)
     if (h >= 1 || h >= 0 !== hopping) continue
     if (hopping) {
-      p.from ??= slotPos(p.slot)
-      const tx = spotX(p.hop.spot)
-      list.push([p.from.x + (tx - p.from.x) * h, p.from.y + (SPOT_CY - p.from.y) * h - Math.sin(h * Math.PI) * 90, 1 - 0.45 * h, p.color])
+      const e = now - p.hop.t, u = clamp01((e - OUT) / HOP), tx = spotX(p.hop.spot)
+      if (e < OUT) list.push([GATE_PT.x, GATE_PT.y + ((EXIT_Y - GATE_PT.y) * e) / OUT, 1, p.color])
+      else list.push([GATE_PT.x + (tx - GATE_PT.x) * u, EXIT_Y + (SPOT_CY - EXIT_Y) * u - Math.sin(u * Math.PI) * 22, 1 - 0.45 * u, p.color])
       continue
     }
-    const s = slotPos(p.slot), u = (now - p.t) / p.w
-    if (u >= 1) list.push([s.x, s.y, 1, p.color])
-    else {
-      const [ex, ey] = ENTRY[p.side], e = u * (2 - u)
-      list.push([ex + (s.x - ex) * e, ey + (s.y - ey) * e - Math.abs(Math.sin(u * 12)) * 8, 1, p.color])
+    const f = FEED[p.feed], ahead = (p.join - now) * SPEED // distance still to walk along the feeder
+    if (ahead > f.len) continue
+    if (ahead > 0) {
+      const [x, y] = along(f.pts, f.len - ahead)
+      list.push([x, y - Math.abs(Math.sin(ahead * 0.15)) * 5, 1, p.color])
+    } else {
+      const s = slotPos(p.slot)
+      list.push([s.x, s.y, 1, p.color])
     }
   }
   list.sort((a, b) => a[1] - b[1])

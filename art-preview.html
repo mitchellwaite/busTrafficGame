@@ -58,7 +58,7 @@ function draw(time) {
   label('Bus Traffic: art preview', 40, 50, 26, 'left');
 
   label('6×8 lot, road 40', lot.x + lot.w / 2, 82);
-  drawLot(ctx, lot, 6, 8, 40);
+  drawLot(ctx, lot, 40);
   for (const [c, r, dir, n, color] of lotBuses) {
     const [dx, dy, deg] = DIRS[dir];
     drawBus(ctx, lot.x + (c + 0.5 - (dx * (n - 1)) / 2) * CELL, lot.y + (r + 0.5 - (dy * (n - 1)) / 2) * CELL,

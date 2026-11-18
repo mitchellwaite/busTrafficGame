@@ -319,6 +319,18 @@ export function drawBus(ctx, x, y, w, len, angle, color, label) {
     sprite(ctx, `bb${color},${W},${L}`, () => busBody(W, L, T));
     ctx.restore();
   }
+  // label null: no badge. On short buses, nudge the badge toward the rear so the windscreen (the facing) stays clear.
+  const back = L < 1.5 * W ? W * 0.12 : 0;
+  ctx.translate(-Math.sin(angle) * back, Math.cos(angle) * back);
+  if (label !== null) sprite(ctx, `bg${color},${W},${text}`, () => badge(ctx, W, color, text));
+  ctx.restore();
+}
+
+// A bus badge on its own, sized for a size × size square: symbol plus label, or the symbol alone.
+export function drawBadge(ctx, x, y, size, color, label) {
+  const W = Math.max(4, Math.round(size)), text = String(label);
+  ctx.save();
+  ctx.translate(x, y);
   sprite(ctx, `bg${color},${W},${text}`, () => badge(ctx, W, color, text));
   ctx.restore();
 }
@@ -405,12 +417,12 @@ export function drawBackground(ctx, w, h) {
   }]);
 }
 
-export function drawLot(ctx, rect, cols, rows, road) {
+export function drawLot(ctx, rect, road) {
   const { x, y, w, h } = rect, p = road + 4;
-  layer(ctx, 'lot', [x, y, w, h, cols, rows, road].join(), () => [x - p, y - p, w + 2 * p, h + 2 * p + 8, (g) => lotArt(g, rect, cols, rows, road)]);
+  layer(ctx, 'lot', [x, y, w, h, road].join(), () => [x - p, y - p, w + 2 * p, h + 2 * p + 8, (g) => lotArt(g, rect, road)]);
 }
 
-function lotArt(ctx, rect, cols, rows, road) {
+function lotArt(ctx, rect, road) {
   const { x, y, w, h } = rect, R = road, ro = R + 14;
   ctx.save();
   ctx.beginPath();
@@ -446,14 +458,6 @@ function lotArt(ctx, rect, cols, rows, road) {
   ctx.lineWidth = 4;
   ctx.strokeStyle = '#FFFFFF';
   ctx.stroke();
-  // soft tiles, one path per layer
-  const cw = w / cols, ch = h / rows, p = Math.min(cw, ch) * 0.07, cr = Math.min(cw, ch) * 0.18;
-  for (const [dy, fill] of [[1.5, 'rgba(130,100,180,0.12)'], [0, 'rgba(255,255,255,0.6)']]) {
-    ctx.beginPath();
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) rr(ctx, x + c * cw + p, y + r * ch + p + dy, cw - 2 * p, ch - 2 * p, cr);
-    ctx.fillStyle = fill;
-    ctx.fill();
-  }
   ctx.restore();
 }
 
@@ -469,27 +473,46 @@ function stadium(g, x, y, w, h) {
   g.closePath();
 }
 
-export function drawLoop(ctx, rect, track) {
-  const { x, y, w, h } = rect, p = track / 2 + 6;
-  layer(ctx, 'loop', [x, y, w, h, track].join(), () => [x - p, y - p, w + 2 * p, h + 2 * p + 8, (g) => loopArt(g, rect, track)]);
+const WALL = ['#6A3DB0', '#8E5BD8', '#BE9BF7']; // outline, base, light stripe
+
+// The loop: a jelly track walled on both edges, a gold-posted gate in the outer wall at bottom centre
+// (where passengers leave to board), and a walled feeder path per entry in `feeders`
+// (polylines from off-screen that end on the track centreline).
+export function drawLoop(ctx, rect, track, feeders = []) {
+  const { x, y, w, h } = rect, p = track / 2 + track * 0.26 + 8;
+  let x0 = x - p, y0 = y - p, x1 = x + w + p, y1 = y + h + p + 8;
+  for (const [fx, fy] of feeders.flat()) {
+    x0 = Math.min(x0, fx - p); y0 = Math.min(y0, fy - p); x1 = Math.max(x1, fx + p); y1 = Math.max(y1, fy + p + 8);
+  }
+  layer(ctx, 'loop', [x, y, w, h, track, feeders.flat(2)].join(), () => [x0, y0, x1 - x0, y1 - y0, (g) => loopArt(g, rect, track, feeders)]);
 }
 
-function loopArt(ctx, rect, track) {
-  const { x, y, w, h } = rect, e = Math.max(3, track * 0.15), jelly = track - 2 * e;
+function loopArt(ctx, rect, track, feeders) {
+  const { x, y, w, h } = rect, e = Math.max(3, track * 0.15), jelly = track - 2 * e, wall = track * 0.26;
   const ring = (d) => stadium(ctx, x - d, y - d, w + 2 * d, h + 2 * d);
   ctx.save();
+  for (const f of feeders) feederArt(ctx, f, track, e, wall);
   // soft shadow: two wide translucent strokes, shifted down
   ring(0);
   ctx.translate(0, 6);
   ctx.strokeStyle = SHADOW + '0.08)';
-  ctx.lineWidth = track + 8;
+  ctx.lineWidth = track + 2 * wall + 8;
   ctx.stroke();
-  ctx.lineWidth = track;
+  ctx.lineWidth = track + 2 * wall;
   ctx.stroke();
   ctx.translate(0, -6);
   ring(-track / 2);
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.fill();
+  // candy walls: outline, base, light centre stripe
+  for (const d of [track / 2 + wall / 2, -track / 2 - wall / 2]) {
+    ring(d);
+    [[wall + 3, WALL[0]], [wall, WALL[1]], [wall * 0.4, WALL[2]]].forEach(([lw, c]) => {
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = c;
+      ctx.stroke();
+    });
+  }
   // candy-stripe rims: white, then pink dashes sized to tile the ring with no seam
   for (const d of [track / 2 - e / 2, e / 2 - track / 2]) {
     ring(d);
@@ -518,6 +541,71 @@ function loopArt(ctx, rect, track) {
   ctx.strokeStyle = '#E0558E';
   for (const d of [track / 2, -track / 2, jelly / 2, -jelly / 2]) {
     ring(d);
+    ctx.stroke();
+  }
+  // Openings in the outer rim and wall. Local frame: +x points out of the loop, the rect spans rim to wall.
+  const open = (px, py, out, hw, fill) => {
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(out);
+    ctx.beginPath();
+    ctx.rect(track / 2 - e - 4, -hw, e + wall + 9, 2 * hw);
+    fill();
+    ctx.restore();
+  };
+  // feeder mouths: repaint the feeder over the loop's rim and wall
+  for (const f of feeders) {
+    const [ax, ay] = f.at(-2), [bx, by] = f.at(-1);
+    open(bx, by, Math.atan2(ay - by, ax - bx), track / 2, () => {
+      ctx.clip();
+      ctx.rotate(-Math.atan2(ay - by, ax - bx));
+      ctx.translate(-bx, -by);
+      feederArt(ctx, f, track, e, wall);
+    });
+  }
+  // the gate at bottom centre, with gold posts
+  const gx = x + w / 2, gy = y + h, hw = track * 0.45, wy = gy + track / 2 + wall / 2;
+  ctx.globalCompositeOperation = 'destination-out';
+  open(gx, gy, Math.PI / 2, hw, () => ctx.fill());
+  ctx.globalCompositeOperation = 'source-over';
+  for (const px of [gx - hw, gx + hw]) {
+    ctx.beginPath();
+    ctx.arc(px, wy, wall * 0.8, 0, TAU);
+    ctx.fillStyle = '#FFC233';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#C17C00';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(px - wall * 0.25, wy - wall * 0.25, wall * 0.3, 0, TAU);
+    ctx.fillStyle = '#FFF3A6';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// A walled feeder path along a polyline, drawn as stacked strokes so it matches the loop's layers.
+function feederArt(ctx, pts, track, e, wall) {
+  const jelly = track - 2 * e;
+  ctx.save();
+  ctx.beginPath();
+  pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.lineJoin = 'round';
+  ctx.translate(0, 6);
+  ctx.lineWidth = track + 2 * wall;
+  ctx.strokeStyle = SHADOW + '0.08)';
+  ctx.stroke();
+  ctx.translate(0, -6);
+  // wall (light stripe = base, light, base bands), outlined rims, jelly
+  const layers = [
+    [track + 2 * wall + 3, WALL[0]], [track + 2 * wall, WALL[1]], [track + wall * 1.4, WALL[2]], [track + wall * 0.6, WALL[1]],
+    [track + 3, '#E0558E'], [track, '#FFFFFF'], [track, '#FF7AAE', [e * 1.3, e * 1.3]],
+    [jelly + 3, '#E0558E'], [jelly, '#A9EBDD'], [jelly * 0.55, 'rgba(255,255,255,0.35)'],
+  ];
+  for (const [lw, c, dash] of layers) {
+    ctx.setLineDash(dash || []);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = c;
     ctx.stroke();
   }
   ctx.restore();

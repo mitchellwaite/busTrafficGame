@@ -3,17 +3,17 @@ import assert from 'node:assert/strict'
 import { createGame, tap, useVip, laneCheck, vipAvailable, expire } from '../src/sim.js'
 import { SIZE_LENGTH, SPOTS } from '../src/config.js'
 
-const bus = (color, col, row, dir, size = 10) => ({ color, size, length: SIZE_LENGTH[size], col, row, dir })
+const bus = (color, x, y, a = 0, size = 10) => ({ color, size, length: SIZE_LENGTH[size], x, y, a })
 const rep = (color, k) => Array(k).fill(color)
-// Buses facing up with their nose on row 0 never block each other.
-const row = (colors) => colors.map((c, i) => bus(c, i, 0, 'up'))
-const make = (buses, queue, { cols = 8, rows = 4, loopCapacity = 50 } = {}) =>
-  createGame({ level: 0, grid: { cols, rows }, buses: buses.map((b, id) => ({ id, ...b })), queue, loopCapacity, spots: [...SPOTS], solution: [] })
+// 1-unit buses side by side along the top, facing up, never block each other.
+const row = (colors) => colors.map((c, i) => bus(c, i + 0.5, 0.5))
+const make = (buses, queue, { w = 8, h = 4, loopCapacity = 50 } = {}) =>
+  createGame({ level: 0, lot: { w, h }, buses: buses.map((b, id) => ({ id, ...b })), queue, loopCapacity, spots: [...SPOTS], solution: [] })
 const types = (events) => events.map((e) => e.type)
 const runs = (events) => types(events).reduce((acc, t) => (acc.at(-1)?.[0] === t ? acc.at(-1)[1]++ : acc.push([t, 1]), acc), [])
 
-// Bus 0 (nose up at col 0) is blocked by bus 1 lying across row 0; bus 1 drives right, clear.
-const blocked = (queue = []) => make([bus(0, 0, 2, 'up'), bus(1, 1, 0, 'right')], queue, { cols: 3, rows: 4 })
+// Bus 0 (facing up, two units down) is blocked by bus 1 at the top facing right; bus 1 is clear.
+const blocked = (queue = []) => make([bus(0, 0.5, 2.5), bus(1, 0.5, 0.5, 90)], queue, { w: 3, h: 4 })
 
 test('createGame streams the queue into the loop', () => {
   const { game, events } = make(row([0]), rep(0, 60), { loopCapacity: 50 })
@@ -25,8 +25,10 @@ test('createGame streams the queue into the loop', () => {
 
 test('a blocked bus bounces and nothing changes', () => {
   const { game } = blocked()
-  assert.deepEqual(laneCheck(game, 0), { clear: false, blocker: 1, freeCells: 1 })
-  assert.deepEqual(tap(game, 0), [{ type: 'bounce', bus: 0, blocker: 1, freeCells: 1 }])
+  const lane = laneCheck(game, 0)
+  assert.deepEqual([lane.clear, lane.blocker], [false, 1])
+  assert.ok(Math.abs(lane.free - 1.16) < 1e-9, `free ${lane.free}`) // body gap: 2 units apart minus two half-bodies
+  assert.deepEqual(tap(game, 0), [{ type: 'bounce', bus: 0, blocker: 1, free: lane.free }])
   assert.equal(game.buses[0].state, 'lot')
   assert.ok(game.spots.every((s) => s.bus === null))
   assert.deepEqual(tap(game, 1), [{ type: 'park', bus: 1, spot: 1 }])
@@ -41,8 +43,14 @@ test('parking uses the first free open spot, never VIP or locked', () => {
   assert.deepEqual(tap(game, 1), []) // not in the lot
 })
 
+test('buses that fill and leave at once still take the next spots in turn', () => {
+  const { game } = make(row([0, 1, 2, 3, 4]), [0, 1, 2, 3, 4].flatMap((c) => rep(c, 10)))
+  assert.deepEqual([0, 1, 2, 3, 4].map((id) => tap(game, id)[0].spot), [1, 2, 3, 4, 1])
+  assert.equal(game.status, 'won')
+})
+
 test('a bus boards only up to its seats, then departs; all gone wins', () => {
-  const { game } = make([bus(0, 0, 0, 'up', 20)], rep(0, 25))
+  const { game } = make([bus(0, 0.5, 1, 0, 20)], rep(0, 25))
   const ev = tap(game, 0)
   assert.deepEqual(runs(ev), [['park', 1], ['board', 20], ['depart', 1], ['won', 1]])
   assert.equal(game.loop.filter((p) => p !== null).length, 5)
@@ -51,7 +59,7 @@ test('a bus boards only up to its seats, then departs; all gone wins', () => {
   assert.deepEqual(tap(game, 0), [])
 })
 
-test('earliest-parked bus fills first; departing frees the spot; events in causal order', () => {
+test('departing frees the spot; events in causal order', () => {
   // 0 blue, 1 red A, 2 red B, 3 green, 4 yellow. Loop holds 10.
   const { game } = make(row([0, 1, 1, 2, 3]), [...rep(2, 10), ...rep(0, 10), ...rep(3, 10), ...rep(1, 20)], { loopCapacity: 10 })
   tap(game, 0) // blue -> spot 1
@@ -61,12 +69,21 @@ test('earliest-parked bus fills first; departing frees the spot; events in causa
   assert.ok(ev.slice(1, 11).every((e) => e.bus === 3 && e.spot === 3))
   assert.deepEqual(ev[11], { type: 'depart', bus: 3, spot: 3 })
   assert.deepEqual(game.spots.map((s) => s.bus).slice(0, 5), [null, null, 1, null, null])
-  assert.deepEqual(tap(game, 2), [{ type: 'park', bus: 2, spot: 1 }]) // red B takes freed spot 1
-  const end = tap(game, 4) // yellow -> spot 3; then 20 red arrive
+  assert.deepEqual(tap(game, 2), [{ type: 'park', bus: 2, spot: 4 }]) // red B takes never-used spot 4
+  const end = tap(game, 4) // yellow -> spot 3 (emptied before spot 1); then 20 red arrive
   assert.equal(end[0].spot, 3)
   const red = end.filter((e) => e.type === 'board' && e.bus !== 4)
-  assert.deepEqual(red.map((e) => e.bus), [...rep(1, 10), ...rep(2, 10)]) // A (spot 2) before B (spot 1)
+  assert.deepEqual(red.map((e) => e.bus), [...rep(1, 10), ...rep(2, 10)]) // A (spot 2) before B (spot 4)
   assert.equal(end.at(-1).type, 'won')
+})
+
+test('passengers board the leftmost bus of their colour, not the first parked', () => {
+  const { game } = make(row([1, 1, 2]), [...rep(2, 10), ...rep(1, 10)], { loopCapacity: 10 })
+  tap(game, 0) // red A -> spot 1; the loop is all green, so nobody boards
+  useVip(game, 1) // red B -> VIP spot 0, left of A
+  const ev = tap(game, 2) // green boards and leaves; 10 red arrive and fill B
+  assert.deepEqual(ev.filter((e) => e.type === 'board' && e.bus !== 2).map((e) => e.bus), rep(1, 10))
+  assert.equal(game.buses[0].filled, 0)
 })
 
 test('VIP teleports a blocked bus, which boards and departs', () => {

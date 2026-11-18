@@ -7,31 +7,27 @@
  *   level,        // the Level it was created from (never modified)
  *   status,       // 'playing' | 'stuck' | 'won' | 'lost'
  *   buses: [{     // same order and ids as level.buses
- *     id, color, size, length, col, row, dir,  // copied from the level; (col,row) = nose cell
+ *     id, color, size, length, x, y, a,  // copied from the level; centre and heading, see geometry.js
  *     state,      // 'lot' | 'parked' | 'gone'
  *     spot,       // index into spots while parked, else null
  *     filled,     // passengers on board, 0..size
- *     parkedAt,   // park order (lower boards first), null while in the lot
  *   }],
- *   spots: [{ type, bus }], // type 'vip' | 'open' | 'locked'; bus = id or null
+ *   spots: [{ type, bus, freed }], // type 'vip' | 'open' | 'locked'; bus = id or null;
+ *                // freed = departures so far when it last emptied (0 = never used)
  *   loop,         // loopCapacity slots, each a passenger id or null
  *   queueIndex,   // next passenger id to enter; passengers.length - queueIndex still wait off-screen
  *   passengers,   // passenger id (= queue index) -> colour; this is level.queue
  * }
  */
 
-export const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
-
-// Cells a bus covers, nose first.
-export const busCells = (b) =>
-  Array.from({ length: b.length }, (_, k) => [b.col - DIRS[b.dir][0] * k, b.row - DIRS[b.dir][1] * k])
+import { hitDistance } from './geometry.js'
 
 export function createGame(level) {
   const game = {
     level,
     status: 'playing',
-    buses: level.buses.map((b) => ({ ...b, state: 'lot', spot: null, filled: 0, parkedAt: null })),
-    spots: level.spots.map((type) => ({ type, bus: null })),
+    buses: level.buses.map((b) => ({ ...b, state: 'lot', spot: null, filled: 0 })),
+    spots: level.spots.map((type) => ({ type, bus: null, freed: 0 })),
     loop: Array(level.loopCapacity).fill(null),
     queueIndex: 0,
     passengers: level.queue,
@@ -45,9 +41,12 @@ export function tap(game, busId) {
   const bus = game.buses[busId]
   if (game.status !== 'playing' || bus?.state !== 'lot') return []
   const lane = laneCheck(game, busId)
-  if (!lane.clear) return [{ type: 'bounce', bus: busId, blocker: lane.blocker, freeCells: lane.freeCells }]
-  // 'playing' guarantees a free open spot.
-  return arrive(game, bus, game.spots.findIndex((s) => s.type === 'open' && s.bus === null), 'park')
+  if (!lane.clear) return [{ type: 'bounce', bus: busId, blocker: lane.blocker, free: lane.free }]
+  // 'playing' guarantees a free open spot. Take the one emptied longest ago (unused ones first, left to right):
+  // a spot the rules just freed may still be busy on screen, so quick taps spread across the row.
+  let spot = -1
+  game.spots.forEach((s, i) => s.type === 'open' && s.bus === null && (spot < 0 || s.freed < game.spots[spot].freed) && (spot = i))
+  return arrive(game, bus, spot, 'park')
 }
 
 export function useVip(game, busId) {
@@ -56,15 +55,15 @@ export function useVip(game, busId) {
   return arrive(game, bus, game.spots.findIndex((s) => s.type === 'vip'), 'teleport')
 }
 
+// The first lot bus in this bus's way and how far it can drive before touching it (lot units).
 export function laneCheck(game, busId) {
-  const { cols, rows } = game.level.grid
-  const at = new Map()
-  for (const b of game.buses) if (b.state === 'lot') for (const [c, r] of busCells(b)) at.set(r * cols + c, b.id)
   const bus = game.buses[busId]
-  const [dx, dy] = DIRS[bus.dir]
-  for (let c = bus.col + dx, r = bus.row + dy, free = 0; c >= 0 && c < cols && r >= 0 && r < rows; c += dx, r += dy, free++)
-    if (at.has(r * cols + c)) return { clear: false, blocker: at.get(r * cols + c), freeCells: free }
-  return { clear: true }
+  let blocker = null, free = Infinity
+  for (const b of game.buses) {
+    const d = b.state === 'lot' && b !== bus ? hitDistance(bus, b) : Infinity
+    if (d < free) [blocker, free] = [b.id, d]
+  }
+  return blocker === null ? { clear: true } : { clear: false, blocker, free }
 }
 
 export const vipAvailable = (game) => (game.status === 'playing' || game.status === 'stuck') && vipFree(game)
@@ -78,8 +77,6 @@ export function expire(game) {
 const vipFree = (game) => game.spots.some((s) => s.type === 'vip' && s.bus === null)
 
 function arrive(game, bus, spot, type) {
-  // Buses never return to the lot, so this count only grows.
-  bus.parkedAt = game.buses.filter((b) => b.state !== 'lot').length
   bus.state = 'parked'
   bus.spot = spot
   game.spots[spot].bus = bus.id
@@ -101,7 +98,8 @@ function settle(game, events) {
       events.push({ type: 'enter', passenger: p, color: passengers[p], slot: s })
       changed = true
     }
-    const parked = game.buses.filter((b) => b.state === 'parked').sort((a, b) => a.parkedAt - b.parkedAt)
+    // Passengers prefer the leftmost bus of their colour (spots are numbered left to right, VIP first).
+    const parked = game.buses.filter((b) => b.state === 'parked').sort((a, b) => a.spot - b.spot)
     loop.forEach((p, s) => {
       const bus = p !== null && parked.find((b) => b.color === passengers[p] && b.filled < b.size)
       if (!bus) return
@@ -115,6 +113,7 @@ function settle(game, events) {
       events.push({ type: 'depart', bus: b.id, spot: b.spot })
       game.spots[b.spot].bus = null
       b.state = 'gone'
+      game.spots[b.spot].freed = game.buses.filter((x) => x.state === 'gone').length
       b.spot = null
       changed = true
     }

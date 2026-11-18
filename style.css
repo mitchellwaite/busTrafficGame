@@ -104,13 +104,13 @@ body { font-family: var(--font); color: var(--ink); }
 }
 /* message area inside the loop */
 #msg {
-  position: absolute; left: 90px; right: 90px; top: 178px; height: 132px;
+  position: absolute; left: 150px; right: 150px; top: 176px; height: 140px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   text-align: center; font-weight: 800;
 }
 #banner {
   padding: 10px 24px; border-radius: 30px;
-  font-size: 28px; color: #fff;
+  font-size: 28px; line-height: 1.2; white-space: pre-line; color: #fff;
   background: linear-gradient(#FF8FA3, #FF4D6D 60%, #D9304F);
   box-shadow: 0 5px 0 #A61E3A, 0 10px 16px rgba(60, 30, 100, 0.25);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.2);
@@ -122,7 +122,9 @@ body { font-family: var(--font); color: var(--ink); }
   box-shadow: 0 4px 12px rgba(60, 30, 100, 0.15);
 }
 #banner:empty, #hint:empty { display: none; }
-#vip { position: absolute; left: 464px; top: 548px; width: 228px; height: 72px; font-size: 40px; }
+/* power-up bar under the lot (game.js keeps BAR px free for it) */
+#powerups { position: absolute; left: 0; right: 0; bottom: 18px; display: flex; justify-content: center; gap: 24px; }
+#vip { width: 228px; height: 72px; font-size: 40px; }
 #vip.on { box-shadow: 0 0 0 6px #fff, 0 0 34px 12px #FFD23F, 0 8px 0 var(--c3); }
 #vip.pulse:not(:disabled) { animation: pulse 0.6s ease-in-out infinite alternate; }
 @keyframes pulse { to { transform: scale(1.1); filter: brightness(1.15); } }

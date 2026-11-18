@@ -48,17 +48,17 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 ```
 ┌───────────────────────────────┐
 │ ⌂  ↻     Level 12     🪙 150  │  HUD: home, restart, level, coins
-│ ←TL entrance     TR entrance→ │  passengers stream in from both top corners (off-screen queue)
-│   ╭───────────────────────╮   │
-│   │  passenger loop (50)  │   │  candy track; 50 peeps visible, more stream in as room frees
-│   ╰───────────────────────╯   │
+│ ╲ feeder           feeder ╱ │  walled paths from off-screen top-left / top-right join the loop's ends
+│  ═╭───────────────────────╮═  │
+│   │  passenger loop (30)  │   │  walled candy track; 30 peeps circulate, more walk in as room frees
+│   ╰──────────╡gate╞───────╯   │  passengers leave only through the gate at bottom centre to board
 │ [VIP][ 1 ][ 2 ][ 3 ][ 4 ][🔒][🔒][🔒] │  8 spots: VIP, 4 open, 3 locked
-│ [★ VIP]                       │  VIP power-up button
 │ ═══════════ road ═════════════ │
 │ ║ ┌───────────────────────┐ ║ │
-│ ║ │   parking lot grid    │ ║ │  5×6 up to ~8×10, buses face 4 directions
+│ ║ │      parking lot      │ ║ │  3×3 up to 9×11 units, zoomed to fit; buses face 8 directions
 │ ║ └───────────────────────┘ ║ │  road on all sides
 │ ═══════════════════════════════ │
+│           [★ VIP]             │  power-up bar under the lot
 └───────────────────────────────┘
 ```
 
@@ -71,10 +71,10 @@ On a wide PC window the portrait board stays centred and the side background fil
 
 ## 4. Game rules (exact, because the solver, tests and game all run this same code)
 
-**Lot.** A grid. Each bus is 1 cell wide, faces `up | down | left | right`, and has a length set by its size: **10 seats = 2 cells, 20 = 3 cells, 40 = 4 cells**.
+**Lot.** A free-form area measured in units (1 unit = one bus width), with no grid. Each bus has a centre point and a heading in 45° steps, so later levels mix in diagonal buses, and a length set by its size: **10 seats = 1 unit, 20 = 2 units, 40 = 3 units**. Lots get more units across as the bus count grows, and the screen zooms the lot out to fit.
 
-**Tap a bus.** Its lane is the cells straight ahead of its nose, up to the lot edge.
-- If the lane is clear, the bus drives out onto the road and into the **first free open spot**, counting left to right. Normal driving never uses the VIP spot or the locked spots.
+**Tap a bus.** Its lane is the strip one bus wide straight ahead of its nose. It is blocked by any lot bus whose body reaches into that strip, and it bounces off the nearest one.
+- If the lane is clear, the bus drives out onto the road and into the free open spot that was **emptied longest ago** (never-used spots first, left to right), so quick taps spread along the row instead of queueing for a spot that is still emptying on screen. Normal driving never uses the VIP spot or the locked spots.
 - If another bus is in the lane, the tapped bus drives up to it, bounces off, and returns to where it started. Nothing else changes.
 - Taps on a bus that is mid-bounce are ignored.
 
@@ -83,9 +83,11 @@ On a wide PC window the portrait board stays centred and the side background fil
 2. Tap **any** bus still in the lot, even a blocked one. It teleports into the VIP spot with a sparkle and boards like any parked bus. Removing it can also free other buses' lanes.
 3. The power-up can be used whenever the VIP spot is empty. It's free for now; later it will cost coins. The button is disabled while the VIP spot is occupied.
 
-**Passengers.** Each level has an ordered queue of passengers. For each colour, the passenger count equals the total seats of that colour's buses. Up to **50** are on the loop at once. The rest wait off-screen and stream in, alternating between the TL and TR entrances (the alternation is purely visual), whenever room frees.
+**Passengers.** Each level has an ordered queue of passengers. For each colour, the passenger count equals the total seats of that colour's buses. Up to **30** are on the loop at once. The rest wait off-screen and walk in along the top-left and top-right feeder paths whenever room frees, stepping onto the loop as their empty slot passes the end of the path (which path is purely visual).
 
-**Boarding.** Any passenger anywhere on the loop whose colour matches a parked, not-full bus boards it. That includes a bus in the VIP spot. If two buses of that colour are parked, the one parked first fills first.
+**Boarding.** The loop circulates (one lap ≈ 5 s), and passengers leave it only through the gate at bottom centre. Every passenger reaches the gate within one lap, so the rules engine boards any matching passenger on the loop at once and only the animation waits for the gate. A passenger boards a parked, not-full bus of its colour. That includes a bus in the VIP spot. If two buses of that colour are parked, the **leftmost** fills first (VIP counts as leftmost); on screen, whoever reaches the gate first takes the leftmost one that is in its spot.
+
+A parked bus shows the seats it still has to fill; the number disappears at 0 and the bus leaves.
 
 **Departing.** A full bus drives off the side of the screen and is done. Its spot frees up.
 
@@ -107,11 +109,11 @@ On a wide PC window the portrait board stays centred and the side background fil
 // generateLevel(n) → Level   (src/generator.js)
 {
   level: 7,
-  grid: { cols: 6, rows: 8 },              // row 0 = top of the lot
-  buses: [ { id: 0, color: 2, size: 20, length: 3,
-             col: 1, row: 4, dir: 'up' } ],  // (col,row) = NOSE cell; body extends behind it
+  lot: { w: 6, h: 8 },                     // lot units; y grows downward
+  buses: [ { id: 0, color: 2, size: 20, length: 2,
+             x: 1.5, y: 4, a: 45 } ],      // centre (x,y); heading a in degrees clockwise from up
   queue: [2, 0, 1, 1, ...],                // passenger colours in arrival order
-  loopCapacity: 50,
+  loopCapacity: 30,
   spots: ['vip','open','open','open','open','locked','locked','locked'], // visual order L→R
   solution: [3, 0, 5, ...]                 // bus ids, a tap-only order proven to win
 }
@@ -120,16 +122,16 @@ On a wide PC window the portrait board stays centred and the side background fil
 createGame(level) → { game, events }       // events = initial loop fill
 tap(game, busId)    → events[]
 useVip(game, busId) → events[]             // no-op [] unless VIP spot empty and bus in lot
-laneCheck(game, busId) → { clear: true } | { clear: false, blocker, freeCells }
+laneCheck(game, busId) → { clear: true } | { clear: false, blocker, free } // free = units it can drive first
 vipAvailable(game)  → boolean
 expire(game)        → events[]             // stuck → lost (countdown ran out)
 game.status         // 'playing' | 'stuck' | 'won' | 'lost'   (stuck = only a power-up can help)
 
 // Events, consumed by the renderer in order:
-{ type: 'bounce',   bus, blocker, freeCells }
+{ type: 'bounce',   bus, blocker, free }
 { type: 'park',     bus, spot }            // spot = index into spots[]
 { type: 'teleport', bus, spot }            // VIP
-{ type: 'enter',    passenger, color, slot } // passenger = queue index, slot = loop slot 0..49
+{ type: 'enter',    passenger, color, slot } // passenger = queue index, slot = loop slot 0..29
 { type: 'board',    passenger, bus, spot }
 { type: 'depart',   bus, spot }
 { type: 'won' } | { type: 'lost' } | { type: 'stuck' }
@@ -147,7 +149,7 @@ The coins features later only need to change `spots` from `'locked'` to `'open'`
 `generateLevel(n)` is deterministic: the same level number always gives the same level (seeded RNG, mulberry32).
 
 1. Read the parameters from `difficulty(n)` (see §7).
-2. **Place buses** at random cells/directions/sizes, with no overlaps and inside the grid. Reject the layout if the "blocks" graph has a cycle (A waits on B while B waits on A). Removing buses only ever clears lanes, so an acyclic layout stays solvable for the lot part forever.
+2. **Place buses** at random centres on a half-unit lattice, with random headings and sizes, no overlaps and inside the lot (`src/geometry.js` has the rectangle maths). Reject a bus if it would close a cycle in the "blocks" graph (A waits on B while B waits on A). Removing buses only ever clears lanes, so an acyclic layout stays solvable for the lot part forever. If the lot fills up before the target count, keep it once it has the band's minimum.
 3. **Assign colours**, balanced, with every colour used at least once.
 4. **Build a witness tap order**: repeatedly pick a random bus whose lane is currently clear.
 5. **Build the passenger queue** from the witness: each bus's passengers in witness order, then jittered (each passenger's sort key = position + random × `noise`). More noise means the stream lines up less well with the lot, which forces the player to buffer buses in spots, and that is the main difficulty lever.
@@ -155,7 +157,8 @@ The coins features later only need to change `spots` from `'locked'` to `'open'`
 7. Return the level with `solution` = the witness.
 
 **Tests** (`npm test`):
-- Rules: bounce; park uses open spots only; boarding cap; oldest-parked-first; depart frees the spot; win.
+- Rules: bounce; park uses open spots only; boarding cap; leftmost-first; depart frees the spot; win.
+- Geometry: straight, offset, diagonal and behind-the-bus lane cases; overlap and bounds.
 - VIP:
   - It can teleport a blocked bus, and the bus boards.
   - It can't be used while the VIP spot is occupied.
@@ -167,14 +170,16 @@ The coins features later only need to change `spots` from `'locked'` to `'open'`
 
 ## 7. Difficulty curve (starting values, tuned in one function in `config.js`)
 
-| Levels | Colours | Buses | Sizes | Grid | Queue noise |
-|---|---|---|---|---|---|
-| 1–2 | 2 | 3–4 | 10, 20 | 5×6 | low |
-| 3–5 | 3 | 5–7 | 10, 20 | 5×7 | low |
-| 6–10 | 4 | 8–12 | + 40 | 6×8 | medium |
-| 11–20 | 5 | 12–18 | all | 7×9 | medium |
-| 21–35 | 6 | 16–24 | all | 8×10 | high |
-| 36+ | 7–8 | 22–30 | all | 8×10 | high |
+| Levels | Colours | Buses | Sizes | Lot (units) | Diagonal | Queue noise |
+|---|---|---|---|---|---|---|
+| 1–2 | 2 | 3–4 | 10, 20 | 3×3 | – | low |
+| 3–5 | 3 | 5–7 | 10, 20 | 3×4 | – | low |
+| 6–10 | 4 | 8–12 | + 40 | 4×6 | – | medium |
+| 11–20 | 5 | 12–18 | all | 6×6 | 10% | medium |
+| 21–35 | 6 | 16–24 | all | 6×8 | 20% | high |
+| 36–60 | 7 | 22–30 | all | 7×9 | 25% | high |
+| 61–100 | 8 | 28–36 | all | 8×10 | 30% | high |
+| 101+ | 8 | 34–42 | all | 9×11 | 35% | high |
 
 Generated levels are proven solvable. Whether they feel fun is something only playtesting will show, and you'll tune it by editing this table.
 
@@ -196,7 +201,7 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
 - **Buses (top-down):**
   - Rounded body with a vertical gradient (light → base → dark) and a darker 3 px outline.
   - A white gloss strip, glossy windows along the sides, a windscreen at the nose and a soft drop shadow.
-  - A roof badge with the colour symbol and seats (`20`, or `12/20` when parked).
+  - A roof badge with the colour symbol and seats (`20`). 1-unit buses show the symbol only, nudged to the rear so the windscreen shows which way they face. Parked buses get a larger badge with the seats still to fill.
 - **Passengers ("peeps"):** gumdrop body + round head in their colour, a gloss dot, and the colour symbol on the belly.
 - **Spots:** rounded pads with white dashed lines. VIP is gold with a star and a "VIP" label. Locked spots are grey with a padlock.
 - **VIP button:** a gold candy pill with a star. It pulses when stuck and is greyed out when the VIP spot is occupied.
@@ -205,7 +210,7 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
 - **Teleport:** a sparkle burst at the old position and at the VIP spot.
 - **Drawing conventions:**
   - Every bus is drawn nose-up, centred on (0,0); the caller translates/rotates.
-  - Parked buses are drawn at a smaller scale to fit the spot row.
+  - Parked buses are drawn at a fixed size to fit the spot row.
 
 Colours are passed around as **palette indices** (0–7) everywhere. The sim only ever sees numbers.
 
@@ -213,12 +218,13 @@ Colours are passed around as **palette indices** (0–7) everywhere. The sim onl
 // src/art.js: pure Canvas 2D, no game state, no imports from other src files
 export const PALETTE                     // [{ name, hex, symbol }] × 8, in the table order above
 drawBackground(ctx, w, h)
-drawLot(ctx, rect, cols, rows, road)    // rect = {x,y,w,h} of the grid; road = road width drawn around it
-drawLoop(ctx, rect)                     // the passenger track
+drawLot(ctx, rect, road)                // rect = {x,y,w,h} of the lot; road = road width drawn around it
+drawLoop(ctx, rect, track, feeders)     // the walled passenger track, gate at bottom centre, feeder paths
 loopPoint(rect, t) → {x, y}             // point on the track centreline, t in [0,1); used to place peeps
 drawSpot(ctx, x, y, w, h, type)         // 'open' | 'vip' | 'locked'; (x,y) = top-left
 drawBus(ctx, x, y, w, len, angle, color, label) // centre (x,y); angle radians, 0 = nose up, clockwise;
-                                        // the roof badge (symbol + label) stays upright at any angle
+                                        // the roof badge (symbol + label) stays upright at any angle; label null = no badge
+drawBadge(ctx, x, y, size, color, label) // a badge on its own
 drawPeep(ctx, x, y, r, color)
 drawSymbol(ctx, x, y, r, color)         // the colour's shape symbol
 drawSparkle(ctx, x, y, t)               // t = 0..1 animation progress
@@ -249,6 +255,7 @@ style.css
 package.json        { "type": "module", scripts: test, start }
 src/rng.js          seeded RNG
 src/config.js       sizes→lengths, spot layout, loop capacity, difficulty(n)
+src/geometry.js     bus rectangles: lanes, overlap, bounds (pure)
 src/sim.js          rules (pure), incl. VIP
 src/generator.js    generateLevel(n) + verification
 src/progress.js     save/load/applyWin
@@ -256,6 +263,7 @@ src/art.js          palette + candy drawing functions
 src/game.js         level screen: layout, input/hit-test, VIP pick mode, animation from events
 src/main.js         boot, screen switching (level select ↔ level), coin counter
 test/sim.test.js
+test/geometry.test.js
 test/progress.test.js
 test/levels.test.js
 art-preview.html    dev-only sheet of every art piece (delete any time)
@@ -278,11 +286,11 @@ Each agent gets this file as its spec plus a narrow brief: its files only, the �
 ## 12. Decisions
 
 All settled:
-- Boarding: any matching passenger on the loop boards.
-- Directions: up/down/left/right, no diagonals.
-- Lengths: 10/20/40 seats = 2/3/4 cells.
+- Boarding: matching passengers board as they pass the gate at the bottom centre of the loop.
+- Directions: 8 headings in 45° steps; diagonal buses from level 11.
+- Lengths: 10/20/40 seats = 1/2/3 units, on a free-form lot that zooms to fit.
 - Colour-blind symbols: on.
-- Loop: 50 on screen.
+- Loop: 30 on screen, fed by two paths from off-screen.
 - VIP: a power-up only.
 - Coins: 50, first completion of a level only.
 - Out of space: a 10 s countdown to use a power-up; game over at once if none can be used.

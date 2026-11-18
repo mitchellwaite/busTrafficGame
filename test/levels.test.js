@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { generateLevel } from '../src/generator.js'
-import { createGame, tap, laneCheck, busCells } from '../src/sim.js'
+import { createGame, tap, laneCheck } from '../src/sim.js'
+import { overlaps, inside } from '../src/geometry.js'
 import { SIZE_LENGTH, SPOTS, LOOP_CAPACITY, MAX_COLORS } from '../src/config.js'
 
 const N = 300
@@ -24,22 +25,26 @@ test('levels generate in well under 100 ms', () => {
 
 test('levels are well-formed, in bounds and overlap-free', () => {
   for (const L of levels) {
-    const { cols, rows } = L.grid
-    assert.ok(cols <= 8 && rows <= 10, `level ${L.level} grid`)
+    const { w, h } = L.lot
+    assert.ok(w <= 11 && h <= 12, `level ${L.level} lot`)
     assert.equal(L.loopCapacity, LOOP_CAPACITY)
     assert.deepEqual(L.spots, SPOTS)
-    const seen = new Set()
     L.buses.forEach((b, i) => {
       assert.equal(b.id, i)
       assert.equal(b.length, SIZE_LENGTH[b.size])
       assert.ok(Number.isInteger(b.color) && b.color >= 0 && b.color < MAX_COLORS)
-      for (const [c, r] of busCells(b)) {
-        assert.ok(c >= 0 && c < cols && r >= 0 && r < rows, `level ${L.level} bus ${i} out of bounds`)
-        assert.ok(!seen.has(r * cols + c), `level ${L.level} bus ${i} overlaps`)
-        seen.add(r * cols + c)
-      }
+      assert.ok(b.a % 45 === 0, `level ${L.level} bus ${i} heading`)
+      assert.ok(inside(b, w, h), `level ${L.level} bus ${i} out of bounds`)
+      L.buses.slice(0, i).forEach((o) => assert.ok(!overlaps(o, b), `level ${L.level} buses ${o.id} and ${i} overlap`))
     })
   }
+})
+
+test('lots grow with the bus count, and diagonal buses appear from level 11', () => {
+  const at = (n) => levels[n - 1]
+  assert.ok(at(300).buses.length > 2 * at(5).buses.length && at(300).lot.w > at(5).lot.w)
+  assert.ok(levels.slice(0, 10).every((L) => L.buses.every((b) => b.a % 90 === 0)))
+  assert.ok(levels.slice(10).some((L) => L.buses.some((b) => b.a % 90 !== 0)))
 })
 
 test('seats per colour equal passengers per colour', () => {
