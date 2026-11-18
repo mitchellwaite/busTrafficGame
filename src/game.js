@@ -361,11 +361,17 @@ const canVip = () => vipAvailable(game) && hooks.balance() >= COSTS.vip && empty
 const canSpot = () => unlockAvailable(game) && hooks.balance() >= COSTS.spot
 const canFill = () => fillAvailable(game) && hooks.balance() >= COSTS.fill
 
+// The Fill button works whenever the player can pay, even with no bus to fill: the coins are spent all the same.
+const fillPayable = () => overlay.hidden && hooks.balance() >= COSTS.fill
+
 function buyFill() {
-  if (!canFill()) return
+  if (!fillPayable()) return
   hooks.spend(COSTS.fill)
   picking = false
-  act(fillParked(game))
+  const events = fillParked(game)
+  // Nothing left to fill in the rules, but passengers already boarded there may still be walking to the gate: fly them in.
+  if (!events.length) rush(now)
+  act(events)
 }
 
 // The spot a tapped bus takes: the rules' pick among the spots that are empty on screen too. The rules free a spot as
@@ -448,7 +454,7 @@ function dom() {
   const ok = overlay.hidden && canVip()
   if (!ok) picking = false
   vipBtn.disabled = !ok
-  fillBtn.disabled = !(overlay.hidden && canFill())
+  fillBtn.disabled = !fillPayable()
   for (const b of [vipBtn, fillBtn]) b.classList.toggle('pulse', stuckAt !== null)
   vipBtn.classList.toggle('on', picking)
   text($('banner'), stuckAt !== null ? `Out of space!\nUse a power-up: ${Math.max(0, Math.ceil(stuckAt - clock - 1e-6))}` : '')
