@@ -17,8 +17,17 @@ html, body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #FFE3F0; /* the top of the canvas background: Safari fills the strip behind the status bar with it */
   -webkit-text-size-adjust: 100%;
+}
+/* The wallpaper is the page background, not canvas art: iOS paints the page background edge to edge (behind the
+   Dynamic Island, the home bar and Safari's bars), where the canvas doesn't reach. The gradient runs 200px past the
+   top and bottom so those strips carry it on; the white dots (5.5px, rows 28px apart) tile everywhere. */
+html {
+  background:
+    radial-gradient(circle at 14px 14px, rgba(255, 255, 255, 0.5) 5.5px, transparent 6px) 0 0 / 56px 56px,
+    radial-gradient(circle at 42px 42px, rgba(255, 255, 255, 0.5) 5.5px, transparent 6px) 0 0 / 56px 56px,
+    linear-gradient(#FFE3F0 200px, #F1E6FF 50%, #DCF1FF calc(100% - 200px)) 0 -200px / 100% calc(100% + 400px) no-repeat,
+    #DCF1FF;
 }
 body { font-family: var(--font); color: var(--ink); }
 

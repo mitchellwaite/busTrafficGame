@@ -82,7 +82,7 @@ function sprite(ctx, key, make) {
   blit(ctx, sp);
 }
 
-// Big static surfaces (background, lot, loop): one live canvas per slot, as the game draws one of each.
+// Big static surfaces (lot, loop): one live canvas per slot, as the game draws one of each.
 const layers = {};
 function layer(ctx, slot, key, make) {
   const s = scaleOf(ctx), k = key + '@' + s;
@@ -402,23 +402,7 @@ export function drawPeep(ctx, x, y, r, color) {
   ctx.restore();
 }
 
-// ---------- board: background, lot, loop, spots ----------
-
-export function drawBackground(ctx, w, h) {
-  layer(ctx, 'bg', w + ',' + h, () => [0, 0, w, h, (g) => {
-    g.fillStyle = vgrad(g, 0, h, '#FFE3F0', '#F1E6FF', '#DCF1FF');
-    g.fillRect(0, 0, w, h);
-    g.beginPath();
-    for (let y = 14, row = 0; y < h + 28; y += 28, row++) {
-      for (let x = row % 2 ? 42 : 14; x < w + 28; x += 56) {
-        g.moveTo(x + 5.5, y);
-        g.arc(x, y, 5.5, 0, TAU);
-      }
-    }
-    g.fillStyle = 'rgba(255,255,255,0.5)';
-    g.fill();
-  }]);
-}
+// ---------- board: lot, loop, spots (the wallpaper is CSS, in style.css) ----------
 
 export function drawLot(ctx, rect, road) {
   const { x, y, w, h } = rect, p = road + 4;

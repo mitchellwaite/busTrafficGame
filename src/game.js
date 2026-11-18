@@ -5,7 +5,7 @@ import { heading } from './geometry.js'
 import { BUS_W, BUS_PAD, COSTS } from './config.js'
 import { generateLevel } from './generator.js'
 import * as sfx from './sound.js'
-import { drawBackground, drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle, drawPrice } from './art.js'
+import { drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle, drawPrice } from './art.js'
 
 const $ = (id) => document.getElementById(id)
 const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = $('vip'), fillBtn = $('fill')
@@ -386,7 +386,7 @@ function frame() {
   clock += dt
   now += dt * speed // fast-forward runs every animation at 2x; the countdown (clock) stays real time
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0)
-  drawBackground(ctx, view.w, view.h)
+  ctx.clearRect(0, 0, view.w, view.h) // see-through: the wallpaper is the page background (style.css)
   if (!game) return
   tick()
   ctx.save()

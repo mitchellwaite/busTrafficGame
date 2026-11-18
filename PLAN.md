@@ -219,7 +219,7 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
 - **Power-up buttons:** candy pills (gold ★ VIP, green ✨ Fill), each with a coin and its cost. They pulse when stuck and are greyed out when unusable or unaffordable.
 - **Price tag:** a dark pill with a coin and the amount (`drawPrice`), on each locked spot.
 - **Coin:** a gold glossy disc, used in the coin counter on every screen.
-- **Loop:** jelly-style rounded track with a candy-stripe edge. **Road:** soft lavender-grey. **Background:** pastel gradient with faint polka dots.
+- **Loop:** jelly-style rounded track with a candy-stripe edge. **Road:** soft lavender-grey. **Background:** pastel gradient with faint polka dots, drawn as the page background in `style.css` (not on the canvas) so iOS shows it behind the Dynamic Island, the home bar and Safari's bars too.
 - **Teleport:** a sparkle burst at the old position and at the VIP spot.
 - **Drawing conventions:**
   - Every bus is drawn nose-up, centred on (0,0); the caller translates/rotates.
@@ -230,7 +230,6 @@ Colours are passed around as **palette indices** (0–7) everywhere. The sim onl
 ```js
 // src/art.js: pure Canvas 2D, no game state, no imports from other src files
 export const PALETTE                     // [{ name, hex, symbol }] × 8, in the table order above
-drawBackground(ctx, w, h)
 drawLot(ctx, rect, road)                // rect = {x,y,w,h} of the lot; road = road width drawn around it
 drawLoop(ctx, rect, track, feeders)     // the walled passenger track, gate at bottom centre, feeder paths
 loopPoint(rect, t) → {x, y}             // point on the track centreline, t in [0,1); used to place peeps

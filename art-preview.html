@@ -19,7 +19,7 @@
 </div>
 <script type="module">
 import {
-  PALETTE, drawBackground, drawLot, drawLoop, loopPoint, drawSpot, drawBus,
+  PALETTE, drawLot, drawLoop, loopPoint, drawSpot, drawBus,
   drawPeep, drawSymbol, drawSparkle, drawCoin, coinDataURL,
 } from './src/art.js';
 
@@ -54,7 +54,8 @@ const peeps = Array.from({ length: 50 }, (_, i) => ({ ...loopPoint(loop, i / 50)
 
 function draw(time) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawBackground(ctx, W, H);
+  ctx.fillStyle = '#F1E6FF'; // the game's wallpaper is CSS (style.css)
+  ctx.fillRect(0, 0, W, H);
   label('Bus Traffic: art preview', 40, 50, 26, 'left');
 
   label('6×8 lot, road 40', lot.x + lot.w / 2, 82);
