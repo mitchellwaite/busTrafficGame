@@ -2,15 +2,31 @@
 // player taps, so the context is created on the first sound, which always comes from a tap. iOS only counts a
 // finished tap (touchend / click), not a touch-down, so those also unlock it: at worst the very first boop waits for
 // the finger to lift.
-let ac = null
-for (const type of ['touchend', 'click']) addEventListener(type, () => audio(), { capture: true, passive: true })
+let ac = null, mark = null // mark = [audio clock, wall clock] at the last finished tap
+for (const type of ['touchend', 'click']) addEventListener(type, unlock, { capture: true, passive: true })
+
+// Every finished tap checks the audio still works, since only a tap may start it again. iOS can leave the context
+// 'interrupted' (a notification sound, Siri, a call, the screen locking) or, after the app was in the background,
+// 'running' with a clock that has stopped and no sound. A clock that ran less than half the time since the last tap
+// (a second or more ago) means the context is stuck, whatever its state says: replace it. Otherwise wake it if it
+// isn't running.
+function unlock() {
+  const a = audio(), wall = performance.now() / 1000
+  if (!a) return
+  if (a.state === 'closed' || (mark && wall - mark[1] > 1 && a.currentTime - mark[0] < (wall - mark[1]) / 2)) {
+    a.close().catch(() => {})
+    ac = mark = null
+    return unlock()
+  }
+  if (a.state !== 'running') a.resume().catch(() => {})
+  mark = [a.currentTime, wall]
+}
 
 function audio() {
   try {
     // latencyHint 0 = the smallest buffer the device allows. Chrome on Windows: ~11 ms to the speakers instead of the
     // default ('interactive') ~50 ms. These few oscillators are far too light to stutter at that size.
     ac ??= new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 0 })
-    if (ac.state === 'suspended') ac.resume()
     return ac
   } catch {
     return null // no Web Audio: the game just stays silent
@@ -31,8 +47,11 @@ function note(f, at, dur, { type = 'sine', vol = 0.2, to = f, lp = 0, wobble = 0
   g.gain.setValueAtTime(vol, t + dur * 0.6)
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
   let out = o
+  const nodes = [g] // disconnected once the note ends, so finished notes never pile up on the audio thread
+  o.onended = () => nodes.forEach((n) => n.disconnect())
   if (lp) {
     out = a.createBiquadFilter()
+    nodes.push(out)
     out.type = 'lowpass'
     out.frequency.setValueAtTime(lp, t)
     out.frequency.linearRampToValueAtTime(lp * 3, t + dur * 0.3)
@@ -43,6 +62,7 @@ function note(f, at, dur, { type = 'sine', vol = 0.2, to = f, lp = 0, wobble = 0
     const lfo = a.createOscillator(), depth = a.createGain()
     lfo.frequency.value = 5
     depth.gain.value = wobble
+    nodes.push(depth)
     lfo.connect(depth).connect(o.frequency)
     lfo.start(t)
     lfo.stop(t + dur)
