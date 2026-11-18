@@ -172,7 +172,7 @@ function busShadow(W, L) {
   }];
 }
 
-function busBody(W, L, T) {
+function busBody(W, L, T, n) {
   return [-W / 2 - 1, -L / 2 - 1, W + 2, L + 2, (g) => {
     const u = W, t = -L / 2, b = L / 2, lw = Math.min(3, Math.max(1.5, W / 16));
     g.lineJoin = 'round';
@@ -194,7 +194,7 @@ function busBody(W, L, T) {
     // glass: windscreen at the nose, side windows, rear window
     const ws = [-u * 0.35, t + u * 0.12, u * 0.7, u * 0.28, u * 0.13];
     const y0 = t + u * 0.5, y1 = b - u * 0.22;
-    const n = Math.max(1, Math.round((y1 - y0) / (u * 0.46))), step = (y1 - y0) / n;
+    const step = (y1 - y0) / n; // n side windows a side, however long or short the bus is drawn
     g.beginPath();
     rr(g, ...ws);
     rr(g, -u * 0.24, b - u * 0.13, u * 0.48, u * 0.06, u * 0.03);
@@ -287,8 +287,8 @@ function badge(mctx, W, color, label) {
 const LIFT = 0.1; // bus shadow drop, × width; always straight down on screen, whatever the heading
 
 // Shadow + body pre-turned by q quarter turns, so cardinal buses blit without rotation.
-function busTurned(W, L, T, q) {
-  const sh = busShadow(W, L), body = busBody(W, L, T), p = -sh[0] - W / 2;
+function busTurned(W, L, T, q, n) {
+  const sh = busShadow(W, L), body = busBody(W, L, T, n), p = -sh[0] - W / 2;
   const hx = (q % 2 ? L : W) / 2 + p, hy = (q % 2 ? W : L) / 2 + p;
   return [-hx, -hy, 2 * hx, 2 * hy + W * LIFT, (g, s) => {
     g.save();
@@ -301,13 +301,16 @@ function busTurned(W, L, T, q) {
   }];
 }
 
-export function drawBus(ctx, x, y, w, len, angle, color, label) {
+// windows = side windows per side; the game passes the bus's length in units (1, 2 or 3) so a bus keeps the same
+// windows when it shrinks from the lot into a spot. Left out, it is worked out from the proportions.
+export function drawBus(ctx, x, y, w, len, angle, color, label, windows) {
   const W = Math.max(4, Math.round(w)), L = Math.max(4, Math.round(len)), T = TONES[color];
+  const n = windows ?? Math.max(1, Math.round((L - W * 0.72) / (W * 0.46)));
   const text = label == null ? '' : String(label), q = Math.round(angle / (Math.PI / 2));
   ctx.save();
   ctx.translate(x, y);
   // Rotated drawImage is ~15× slower than an axis-aligned one (measured), and most buses sit at 0/90/180/270.
-  if (Math.abs(angle - (q * Math.PI) / 2) < 1e-4) sprite(ctx, `bq${color},${W},${L},${q & 3}`, () => busTurned(W, L, T, q & 3));
+  if (Math.abs(angle - (q * Math.PI) / 2) < 1e-4) sprite(ctx, `bq${color},${W},${L},${q & 3},${n}`, () => busTurned(W, L, T, q & 3, n));
   else {
     ctx.save();
     ctx.translate(0, W * LIFT);
@@ -316,7 +319,7 @@ export function drawBus(ctx, x, y, w, len, angle, color, label) {
     ctx.restore();
     ctx.save();
     ctx.rotate(angle);
-    sprite(ctx, `bb${color},${W},${L}`, () => busBody(W, L, T));
+    sprite(ctx, `bb${color},${W},${L},${n}`, () => busBody(W, L, T, n));
     ctx.restore();
   }
   // label null: no badge. On short buses, nudge the badge toward the rear so the windscreen (the facing) stays clear.

@@ -38,7 +38,7 @@ Browser puzzle game for PC and iOS Safari: tap buses out of a jammed lot into pa
 
   Take one screenshot first, so the pending real frame hands over to the shim.
 - `setCoins(n)` in the console sets the coin count (saved).
-- `window.__bt` exposes `game`, `level`, `joinAt` (when each passenger steps onto the loop) and `now` (visual time, the clock `joinAt` uses).
+- `window.__bt` exposes `game`, `level`, `joinAt` (when each passenger steps onto the loop), `vis` (per-bus animation state; `vis[i].move.hold` > 0 would mean a bus waited on the road for its spot, which must never happen) and `now` (visual time, the clock `joinAt` uses).
 - After editing modules, re-fetch them with `fetch(url, {cache: 'reload'})` before reloading. Otherwise cached old modules mix with new ones and the page fails to load.
 - Remove any test save (`localStorage.removeItem('busTraffic.save')`) and reset the viewport when done.
 
@@ -47,7 +47,7 @@ Browser puzzle game for PC and iOS Safari: tap buses out of a jammed lot into pa
 End your closing message with the command to start the game server and the link to open, so the user can play-test it themselves:
 
 ```bash
-python -m http.server 8000
+python serve.py
 ```
 
-Then open http://localhost:8000. The command must be run from the project folder. If the browser shows a blank page after an update, a hard refresh (Ctrl+Shift+R) clears the old cached scripts.
+Then open http://localhost:8000. The command must be run from the project folder. `serve.py` sends `Cache-Control: no-cache`, so browsers (including an iPhone on the LAN) pick up edited modules on a normal reload. Plain `python -m http.server` sends no cache headers, and browsers then reuse stale modules: an update seems to do nothing, or old and new modules mix and the page goes blank. If the user is still on the old server, tell them to stop it and start `serve.py`.

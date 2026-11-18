@@ -27,7 +27,7 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 - **Plain HTML + Canvas 2D + vanilla JavaScript ES modules.** No framework, no build step, no runtime dependencies. One canvas for the board. Plain DOM buttons for menus, overlays and the HUD, which are easy to make accessible and stay crisp on every screen.
 - **All art drawn in code** (gradients, rounded shapes, gloss highlights). No image assets to produce or license.
 - **Node's built-in test runner** (`node --test`, Node 24 is installed) for rules, progress and level verification. No test library.
-- Serve locally with `python -m http.server 8000` (ES modules don't load from `file://`).
+- Serve locally with `python serve.py` (ES modules don't load from `file://`). It is `python -m http.server` plus `Cache-Control: no-cache`, so edits are never hidden by a stale cached module.
 
 ## 3. Screens (portrait, design space 720 × 1280, scaled to fit)
 
@@ -77,12 +77,12 @@ On a wide PC window the portrait board stays centred and the side background fil
 - If the lane is clear, the bus drives out onto the road and into the free open spot that was **emptied longest ago** (never-used spots first, left to right), so quick taps spread along the row instead of queueing for a spot that is still emptying on screen. Normal driving never uses the VIP spot or the locked spots.
 - If another bus is in the lane, the tapped bus drives up to it, bounces off, and returns to where it started. Nothing else changes.
 - Taps on a bus that is mid-bounce are ignored.
-- If no open spot is empty on screen (all taken, or the bus in it has not started driving off yet), the bus only shakes in place. The screen checks this before the rules see the tap, so the rules stay timing-free.
+- **A bus never waits for a spot.** The rules pick the spot (`nextSpot`), and the tap only goes through if that exact spot is empty on screen too: the bus in it has started driving off. Otherwise the bus buzzes and shakes in place, even if another spot looks free. (When two buses fill at about the same moment, they can leave on screen in a different order from the rules'.) The screen checks this before the rules see the tap, so the rules stay timing-free; the rules' spot choice can't follow the screen, because which spot a bus takes decides which same-colour bus is leftmost and so which fills first.
 
 **VIP power-up.**
 1. Tap the **VIP button**. The game enters "pick a bus" mode: lot buses glow and a hint reads "Tap a bus to send it to VIP". Tapping the button again cancels.
 2. Tap **any** bus still in the lot, even a blocked one. It teleports into the VIP spot with a sparkle and boards like any parked bus. Removing it can also free other buses' lanes.
-3. Each use costs **25 coins**, paid when the bus is picked; cancelling is free. The power-up can be used whenever the VIP spot is empty. The button is disabled while the VIP spot is occupied or the player has too few coins.
+3. Each use costs **25 coins**, paid when the bus is picked; cancelling is free. The power-up can be used whenever the VIP spot is empty. The button is disabled while the VIP spot is occupied (including while its last bus is still boarding on screen) or the player has too few coins.
 
 **Unlocking a spot.** Each locked spot shows its price (**50 coins**). Tap it to pay and open that spot, with a sparkle. It works like any open spot for the rest of the level; the next level (or a restart) starts with 3 locked spots again. With too few coins the padlock shakes and nothing is charged. While stuck, the price tags pulse if affordable.
 
@@ -212,7 +212,7 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
 
 - **Buses (top-down):**
   - Rounded body with a vertical gradient (light → base → dark) and a darker 3 px outline.
-  - A white gloss strip, glossy windows along the sides, a windscreen at the nose and a soft drop shadow.
+  - A white gloss strip, glossy windows along the sides (one per side per unit of length: 1, 2 or 3, the same in the lot and in a spot), a windscreen at the nose and a soft drop shadow.
   - A roof badge with the colour symbol only; the bus length shows its size. On 1-unit buses it is nudged to the rear so the windscreen shows which way they face. Only parked buses show a number: a larger badge with the seats still to fill.
 - **Passengers ("peeps"):** gumdrop body + round head in their colour, a gloss dot, and the colour symbol on the belly.
 - **Spots:** rounded pads with white dashed lines. VIP is gold with a star and a "VIP" label. Locked spots are grey with a padlock.
@@ -235,7 +235,7 @@ drawLot(ctx, rect, road)                // rect = {x,y,w,h} of the lot; road = r
 drawLoop(ctx, rect, track, feeders)     // the walled passenger track, gate at bottom centre, feeder paths
 loopPoint(rect, t) → {x, y}             // point on the track centreline, t in [0,1); used to place peeps
 drawSpot(ctx, x, y, w, h, type)         // 'open' | 'vip' | 'locked'; (x,y) = top-left
-drawBus(ctx, x, y, w, len, angle, color, label) // centre (x,y); angle radians, 0 = nose up, clockwise;
+drawBus(ctx, x, y, w, len, angle, color, label, windows) // centre (x,y); angle radians, 0 = nose up, clockwise; windows per side;
                                         // the roof badge (symbol + label) stays upright at any angle; label null = no badge
 drawBadge(ctx, x, y, size, color, label) // a badge on its own
 drawPeep(ctx, x, y, r, color)
@@ -295,7 +295,7 @@ art-preview.html    dev-only sheet of every art piece (delete any time)
 
 Each agent gets this file as its spec plus a narrow brief: its files only, the §5 contract, and its done-criteria.
 
-**Testing on your iPhone:** run `python -m http.server 8000` on the PC, then open `http://<PC-IP>:8000` on the phone over the same Wi-Fi (allow it through Windows Firewall when asked). Saves are per address, so progress made at a LAN address won't carry over to a later hosted URL. GitHub Pages works if you want a stable public URL.
+**Testing on your iPhone:** run `python serve.py` on the PC, then open `http://<PC-IP>:8000` on the phone over the same Wi-Fi (allow it through Windows Firewall when asked). Saves are per address, so progress made at a LAN address won't carry over to a later hosted URL. GitHub Pages works if you want a stable public URL.
 
 ## 12. Decisions
 

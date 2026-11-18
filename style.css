@@ -17,7 +17,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #F1E6FF;
+  background: #FFE3F0; /* the top of the canvas background: Safari fills the strip behind the status bar with it */
   -webkit-text-size-adjust: 100%;
 }
 body { font-family: var(--font); color: var(--ink); }

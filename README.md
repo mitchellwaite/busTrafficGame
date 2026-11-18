@@ -39,10 +39,10 @@ Your progress (unlocked levels, current level and coins) is saved in the browser
 There is no build step and nothing to install. Browsers won't load the game's JavaScript modules straight from disk, so serve the folder:
 
 ```bash
-python -m http.server 8000
+python serve.py
 ```
 
-Then open http://localhost:8000. After pulling an update, a hard refresh (Ctrl+Shift+R) makes sure the browser isn't mixing old and new scripts.
+Then open http://localhost:8000. `serve.py` is Python's built-in web server, set up so browsers always fetch the latest scripts after an edit instead of a stale cached copy. Other devices on the same Wi-Fi, like a phone, can open `http://<your-PC's-IP>:8000`.
 
 For testing, type `setCoins(500)` in the browser console to set your coin count.
 

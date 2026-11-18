@@ -1,6 +1,6 @@
 // Level screen (PLAN.md §3-§5): layout, input/hit-test, VIP pick mode and animation.
 // The sim settles instantly; play() schedules its events on a timeline and the visuals catch up to the sim state.
-import { createGame, tap, useVip, vipAvailable, unlockSpot, unlockAvailable, fillParked, fillAvailable, expire } from './sim.js'
+import { createGame, tap, nextSpot, useVip, vipAvailable, unlockSpot, unlockAvailable, fillParked, fillAvailable, expire } from './sim.js'
 import { heading } from './geometry.js'
 import { BUS_W, BUS_PAD, COSTS } from './config.js'
 import { generateLevel } from './generator.js'
@@ -30,7 +30,7 @@ const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0, speed = 1
 let vis, peeps, sparks, timers, free, joinAt, lastJoin, armJoin, armStart, spotFree, lockShake, picking, stuckAt, hint, gained
 
-window.__bt = { get game() { return game }, get level() { return level }, get joinAt() { return joinAt }, get now() { return now } } // for testing
+window.__bt = { get game() { return game }, get level() { return level }, get joinAt() { return joinAt }, get vis() { return vis }, get now() { return now } } // for testing
 
 export function init(h) {
   hooks = h
@@ -333,7 +333,7 @@ function onDown(e) {
     }
   } else if (!spotOpen()) {
     sfx.buzz()
-    vis[id].wobble = now // every spot is taken on screen: the bus shakes instead of driving off
+    vis[id].wobble = now // its spot is still taken on screen: the bus shakes instead of driving up to wait
     return
   } else events = tap(game, id)
   events[0]?.type === 'bounce' ? sfx.buzz() : sfx.boop() // a bus that can't get out buzzes
@@ -346,7 +346,7 @@ function act(events) {
 }
 
 // Power-ups the rules allow and the player can pay for.
-const canVip = () => vipAvailable(game) && hooks.balance() >= COSTS.vip
+const canVip = () => vipAvailable(game) && hooks.balance() >= COSTS.vip && emptyOnScreen(game.spots.findIndex((s) => s.type === 'vip'))
 const canSpot = () => unlockAvailable(game) && hooks.balance() >= COSTS.spot
 const canFill = () => fillAvailable(game) && hooks.balance() >= COSTS.fill
 
@@ -357,8 +357,11 @@ function buyFill() {
   act(fillParked(game))
 }
 
-// An open spot that is empty on screen too. The rules free a spot as soon as its bus fills, before it drives off.
-const spotOpen = () => game.spots.some((s, i) => s.type === 'open' && s.bus === null && (spotFree[i] || 0) <= now)
+// The spot the rules would give a tapped bus is empty on screen too. The rules free a spot as soon as its bus fills,
+// before it drives off, and pick spots in their own order, so it can still be emptying while another looks free.
+const spotOpen = () => emptyOnScreen(nextSpot(game))
+// Spot i is free in the rules and its last bus has started to drive off on screen. A bus never waits for a spot.
+const emptyOnScreen = (i) => i >= 0 && game.spots[i].bus === null && (spotFree[i] || 0) <= now
 
 // Nearest lot bus whose body is within a padding (at least 12 CSS px) of the point; null if none or it is mid-bounce.
 function hit(x, y) {
@@ -485,7 +488,7 @@ function drawOne(b, v, ph) {
   const seats = () => b.size - v.landings.filter((t) => t <= now).length || ''
   // Parked-size buses carry a big badge (seats still to fill) so the count reads on a phone.
   const parked = (x, y, a, label) => {
-    drawBus(ctx, x, y, PARK_W, plen, a, b.color, null)
+    drawBus(ctx, x, y, PARK_W, plen, a, b.color, null, b.length)
     drawBadge(ctx, x, y, BADGE, b.color, label)
   }
   if (ph === 'parked') return parked(spotX(v.spot), SPOT_CY, 0, seats())
@@ -498,11 +501,11 @@ function drawOne(b, v, ph) {
     const d = m.len * (1 - (1 - clamp01(tw / m.dur)) ** 2), p = pose(m.path, d)
     const k = 1 + (PARK_W / w - 1) * clamp01(d / m.first), fade = clamp01((d - m.len + m.last) / m.last)
     // shrink to parked width on the way out of the lot, cross-fade to the parked sprite on the way into the spot
-    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, ''))
+    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, '', b.length))
     if (fade > 0) scaled(p.x, p.y, 1, fade, () => parked(0, 0, p.a, seats()))
     return
   }
-  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, ''))
+  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, '', b.length))
   if (ph === 'appear') {
     const u = clamp01((now - v.tp.appear) / 0.25) - 1 // ease-out-back pop
     return scaled(spotX(v.spot), SPOT_CY, 1 + 2.7 * u ** 3 + 1.7 * u ** 2, 1, () => parked(0, 0, 0, seats()))
@@ -527,7 +530,7 @@ function drawOne(b, v, ph) {
     ctx.fillRect(-hw, -hl, 2 * hw, 2 * hl)
     ctx.restore()
   }
-  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, '')
+  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, '', b.length)
 }
 
 // The upcoming queue on each arm: everyone not yet on the loop, including passengers the rules have not let in yet,
