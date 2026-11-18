@@ -14,8 +14,6 @@ I built this with AI because i was tired of the constant ads in all the bus game
 - **Clear every bus to win.** Small buses seat 4, medium 6 and large 10.
 - **Out of space:** when every open spot holds a bus that is still waiting, you have 10 seconds to use a power-up. If you can't afford one, the level is over.
 
-Every colour also has its own symbol, so the game works for colour-blind players too.
-
 ## Power-ups
 
 You earn **50 coins** the first time you clear each level.
@@ -30,7 +28,7 @@ The **»** button at the top runs the animation at double speed.
 
 ## Levels
 
-Levels are generated, so they never run out. They start with a handful of buses in two colours and grow to 40-odd buses in eight colours, with diagonal parking from level 11. Every level is checked before you see it: the generator replays a winning sequence of plain taps, with no power-ups, so every level can be beaten without spending coins. From level 11 a level must also make you park at least one bus and wait, so there is something to plan.
+Levels are generated, so they never run out. They start with a handful of buses in two colours and grow to 40-odd buses in eight colours (out of nine), with diagonal parking from level 11. Every level is checked before you see it: the generator replays a winning sequence of plain taps, with no power-ups, so every level can be beaten without spending coins. From level 11 a level must also make you park at least one bus and wait, so there is something to plan.
 
 Your progress (unlocked levels, current level and coins) is saved in the browser.
 

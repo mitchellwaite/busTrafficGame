@@ -126,7 +126,7 @@ body { font-family: var(--font); color: var(--ink); }
 }
 /* message area inside the loop */
 #msg {
-  position: absolute; left: 170px; right: 170px; top: 172px; height: 130px;
+  position: absolute; left: 170px; right: 170px; top: 178px; height: 126px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   text-align: center; font-weight: 800;
 }

@@ -1,15 +1,17 @@
 // Candy-style procedural art (PLAN.md §8). Pure Canvas 2D, no game state.
 // Touches `document` only inside draw calls, never at import time.
 
+// Colour alone tells passengers and buses apart, so the hues are saturated and spread around the wheel.
 export const PALETTE = [
-  { name: 'cherry', hex: '#FF4D6D', symbol: 'heart' },
-  { name: 'tangerine', hex: '#FF9F1C', symbol: 'circle' },
-  { name: 'lemon', hex: '#FFD23F', symbol: 'star' },
-  { name: 'lime', hex: '#7BD389', symbol: 'triangle' },
-  { name: 'sky', hex: '#4CC9F0', symbol: 'square' },
-  { name: 'grape', hex: '#9B5DE5', symbol: 'diamond' },
-  { name: 'bubblegum', hex: '#F15BB5', symbol: 'flower' },
-  { name: 'teal', hex: '#00BBA7', symbol: 'cross' },
+  { name: 'cherry', hex: '#FF2D4F' },
+  { name: 'tangerine', hex: '#FF8A00' },
+  { name: 'lemon', hex: '#FFD60A' },
+  { name: 'lime', hex: '#3FD957' },
+  { name: 'blue', hex: '#2E8BFF' },
+  { name: 'grape', hex: '#9B47FF' },
+  { name: 'bubblegum', hex: '#FF4FC4' },
+  { name: 'teal', hex: '#00D2C2' },
+  { name: 'chocolate', hex: '#9A5A2C' }, // darker than tangerine so the two don't mix up
 ];
 
 const TAU = Math.PI * 2;
@@ -24,7 +26,7 @@ function mix(hex, t) {
   return `rgb(${c(n >> 16)},${c((n >> 8) & 255)},${c(n & 255)})`;
 }
 const TONES = PALETTE.map(({ hex }) => ({
-  hi: mix(hex, 0.7), light: mix(hex, 0.4), base: hex, dark: mix(hex, -0.18), line: mix(hex, -0.45),
+  hi: mix(hex, 0.6), light: mix(hex, 0.3), base: hex, dark: mix(hex, -0.15), line: mix(hex, -0.45),
 }));
 
 // Rounded-rect subpath (no beginPath, so several can share one fill).
@@ -94,68 +96,14 @@ function layer(ctx, slot, key, make) {
   blit(ctx, sp);
 }
 
-// ---------- symbols ----------
-
-function symbolPath(g, kind, r) {
+// Five-point star subpath, centred.
+function starPath(g, r) {
   g.beginPath();
-  if (kind === 'heart') {
-    g.moveTo(0, r * 0.82);
-    g.bezierCurveTo(-r * 1.35, -r * 0.15, -r * 0.75, -r * 1.3, 0, -r * 0.58);
-    g.bezierCurveTo(r * 0.75, -r * 1.3, r * 1.35, -r * 0.15, 0, r * 0.82);
-  } else if (kind === 'circle') g.arc(0, 0, r * 0.85, 0, TAU);
-  else if (kind === 'star') {
-    for (let i = 0; i < 10; i++) {
-      const a = (i * Math.PI) / 5 - Math.PI / 2, d = i % 2 ? r * 0.46 : r * 1.05;
-      g.lineTo(Math.cos(a) * d, Math.sin(a) * d + r * 0.08);
-    }
-  } else if (kind === 'triangle') {
-    g.moveTo(0, -r * 0.9);
-    g.lineTo(r * 0.95, r * 0.75);
-    g.lineTo(-r * 0.95, r * 0.75);
-  } else if (kind === 'square') rr(g, -r * 0.74, -r * 0.74, r * 1.48, r * 1.48, r * 0.2);
-  else if (kind === 'diamond') {
-    g.moveTo(0, -r);
-    g.lineTo(r * 0.78, 0);
-    g.lineTo(0, r);
-    g.lineTo(-r * 0.78, 0);
-  } else if (kind === 'flower') {
-    for (let i = 0; i < 5; i++) {
-      const a = (i * TAU) / 5 - Math.PI / 2, px = Math.cos(a) * r * 0.5, py = Math.sin(a) * r * 0.5;
-      g.moveTo(px + r * 0.44, py);
-      g.arc(px, py, r * 0.44, 0, TAU);
-    }
-  } else if (kind === 'cross') {
-    const a = r * 0.32, b = r * 0.9;
-    [[-a, -b], [a, -b], [a, -a], [b, -a], [b, a], [a, a], [a, b], [-a, b], [-a, a], [-b, a], [-b, -a], [-a, -a]]
-      .forEach(([px, py]) => g.lineTo(px, py));
+  for (let i = 0; i < 10; i++) {
+    const a = (i * Math.PI) / 5 - Math.PI / 2, d = i % 2 ? r * 0.46 : r * 1.05;
+    g.lineTo(Math.cos(a) * d, Math.sin(a) * d + r * 0.08);
   }
   g.closePath();
-}
-
-// Outline is stroked first at double width so the fill hides its inner half (clean union for the flower).
-export function drawSymbol(ctx, x, y, r, color) {
-  const T = TONES[color], kind = PALETTE[color].symbol;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.lineJoin = 'round';
-  symbolPath(ctx, kind, r);
-  ctx.lineWidth = r * 0.3;
-  ctx.strokeStyle = T.line;
-  ctx.stroke();
-  ctx.fillStyle = vgrad(ctx, -r, r, T.light, T.base, T.dark);
-  ctx.fill();
-  ctx.clip();
-  if (kind === 'flower') {
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.3, 0, TAU);
-    ctx.fillStyle = '#FFF1A6';
-    ctx.fill();
-  }
-  ctx.beginPath();
-  ctx.ellipse(-r * 0.3, -r * 0.5, r * 0.5, r * 0.26, -0.5, 0, TAU);
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.fill();
-  ctx.restore();
 }
 
 // ---------- buses ----------
@@ -242,27 +190,17 @@ function busBody(W, L, T, n) {
   }];
 }
 
-// Upright badge sized to fit a ~W×W square, so it stays inside the bus at any angle.
+// Upright number badge sized to fit a ~W×W square: a white disc (a pill for two digits) with the colour's outline.
 function badge(mctx, W, color, label) {
   mctx.font = `800 100px ${FONT}`;
-  const k = label ? mctx.measureText(label).width / 100 : 0, max = W * 0.88;
-  let h = W * 0.42, f = h * 0.66, sr = h * 0.3, pad = h * 0.2, gap = h * 0.14;
-  let bw = label ? 2 * pad + 2 * sr + gap + k * f : h, bh = h, stacked = false;
-  if (bw > max) { // long labels like "12/20": symbol above text
-    stacked = true;
-    f = Math.min(W * 0.3, (max - W * 0.12) / k);
-    sr = W * 0.13;
-    bw = Math.max(2 * sr, k * f) + W * 0.12;
-    bh = W * 0.1 + 2 * sr + f * 0.95;
-  }
-  const m = 3;
-  return [-bw / 2 - m, -bh / 2 - m, bw + 2 * m, bh + 2 * m, (g, s) => {
+  const h = W * 0.5, f = h * 0.72, bw = Math.max(h, (mctx.measureText(label).width / 100) * f + h * 0.45), m = 3;
+  return [-bw / 2 - m, -h / 2 - m, bw + 2 * m, h + 2 * m, (g, s) => {
     g.beginPath();
-    rr(g, -bw / 2, -bh / 2, bw, bh, stacked ? W * 0.14 : bh / 2);
+    rr(g, -bw / 2, -h / 2, bw, h, h / 2);
     g.shadowColor = 'rgba(40,20,70,0.35)';
     g.shadowBlur = 2 * s;
     g.shadowOffsetY = s;
-    g.fillStyle = vgrad(g, -bh / 2, bh / 2, '#FFFFFF', '#EEE8F7');
+    g.fillStyle = vgrad(g, -h / 2, h / 2, '#FFFFFF', '#EEE8F7');
     g.fill();
     g.shadowColor = 'transparent';
     g.lineWidth = Math.max(1, W * 0.03);
@@ -272,15 +210,7 @@ function badge(mctx, W, color, label) {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = INK;
-    if (stacked) {
-      drawSymbol(g, 0, -bh / 2 + W * 0.05 + sr, sr, color);
-      g.fillText(label, 0, bh / 2 - W * 0.05 - f * 0.42);
-    } else if (!label) drawSymbol(g, 0, 0, sr * 1.2, color);
-    else {
-      const x0 = -bw / 2 + pad + sr;
-      drawSymbol(g, x0, 0, sr, color);
-      g.fillText(label, x0 + sr + gap + (k * f) / 2, f * 0.05);
-    }
+    g.fillText(label, 0, f * 0.05);
   }];
 }
 
@@ -303,10 +233,10 @@ function busTurned(W, L, T, q, n) {
 
 // windows = side windows per side; the game passes the bus's length in units (1, 2 or 3) so a bus keeps the same
 // windows when it shrinks from the lot into a spot. Left out, it is worked out from the proportions.
-export function drawBus(ctx, x, y, w, len, angle, color, label, windows) {
+export function drawBus(ctx, x, y, w, len, angle, color, windows) {
   const W = Math.max(4, Math.round(w)), L = Math.max(4, Math.round(len)), T = TONES[color];
   const n = windows ?? Math.max(1, Math.round((L - W * 0.72) / (W * 0.46)));
-  const text = label == null ? '' : String(label), q = Math.round(angle / (Math.PI / 2));
+  const q = Math.round(angle / (Math.PI / 2));
   ctx.save();
   ctx.translate(x, y);
   // Rotated drawImage is ~15× slower than an axis-aligned one (measured), and most buses sit at 0/90/180/270.
@@ -322,16 +252,13 @@ export function drawBus(ctx, x, y, w, len, angle, color, label, windows) {
     sprite(ctx, `bb${color},${W},${L},${n}`, () => busBody(W, L, T, n));
     ctx.restore();
   }
-  // label null: no badge. On short buses, nudge the badge toward the rear so the windscreen (the facing) stays clear.
-  const back = L < 1.5 * W ? W * 0.12 : 0;
-  ctx.translate(-Math.sin(angle) * back, Math.cos(angle) * back);
-  if (label !== null) sprite(ctx, `bg${color},${W},${text}`, () => badge(ctx, W, color, text));
   ctx.restore();
 }
 
-// A bus badge on its own, sized for a size × size square: symbol plus label, or the symbol alone.
+// A number badge (seats still to fill), sized for a size × size square; an empty label draws nothing.
 export function drawBadge(ctx, x, y, size, color, label) {
   const W = Math.max(4, Math.round(size)), text = String(label);
+  if (!text) return;
   ctx.save();
   ctx.translate(x, y);
   sprite(ctx, `bg${color},${W},${text}`, () => badge(ctx, W, color, text));
@@ -366,15 +293,6 @@ function peep(r, color) {
     g.ellipse(-r * 0.4, r * 0.18, r * 0.08, r * 0.24, 0.2, 0, TAU);
     g.fillStyle = 'rgba(255,255,255,0.45)';
     g.fill();
-    // belly symbol: white with the colour's outline, readable on every colour
-    g.save();
-    g.translate(0, r * 0.42);
-    symbolPath(g, PALETTE[color].symbol, r * 0.3);
-    g.lineWidth = r * 0.12;
-    g.stroke();
-    g.fillStyle = '#fff';
-    g.fill();
-    g.restore();
     // head
     g.beginPath();
     g.arc(0, -r * 0.54, r * 0.42, 0, TAU);
@@ -460,13 +378,13 @@ function stadium(g, x, y, w, h) {
   g.closePath();
 }
 
-const WALL = ['#6A3DB0', '#8E5BD8', '#BE9BF7']; // outline, base, light stripe
+const WALL = ['#A29FB1', '#C9C6D4', '#E8E6EE'], WALL_K = 0.13; // soft grey: outline, base, light stripe; thickness × track
 
 // The loop: a jelly track walled on both edges, a gold-posted gate in the outer wall at bottom centre
 // (where passengers leave to board), and a walled feeder path per entry in `feeders`
 // (polylines from off-screen that end on the track centreline).
 export function drawLoop(ctx, rect, track, feeders = []) {
-  const { x, y, w, h } = rect, p = track / 2 + track * 0.26 + 8;
+  const { x, y, w, h } = rect, p = track / 2 + track * WALL_K + 8;
   let x0 = x - p, y0 = y - p, x1 = x + w + p, y1 = y + h + p + 8;
   for (const [fx, fy] of feeders.flat()) {
     x0 = Math.min(x0, fx - p); y0 = Math.min(y0, fy - p); x1 = Math.max(x1, fx + p); y1 = Math.max(y1, fy + p + 8);
@@ -475,10 +393,10 @@ export function drawLoop(ctx, rect, track, feeders = []) {
 }
 
 function loopArt(ctx, rect, track, feeders) {
-  const { x, y, w, h } = rect, e = Math.max(3, track * 0.15), jelly = track - 2 * e, wall = track * 0.26;
+  const { x, y, w, h } = rect, wall = track * WALL_K;
   const ring = (d) => stadium(ctx, x - d, y - d, w + 2 * d, h + 2 * d);
   ctx.save();
-  for (const f of feeders) feederArt(ctx, f, track, e, wall);
+  for (const f of feeders) feederArt(ctx, f, track, wall);
   // soft shadow: two wide translucent strokes, shifted down
   ring(0);
   ctx.translate(0, 6);
@@ -500,43 +418,25 @@ function loopArt(ctx, rect, track, feeders) {
       ctx.stroke();
     });
   }
-  // candy-stripe rims: white, then pink dashes sized to tile the ring with no seam
-  for (const d of [track / 2 - e / 2, e / 2 - track / 2]) {
-    ring(d);
-    ctx.lineWidth = e;
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.stroke();
-    const P = 2 * (w - h) + Math.PI * (h + 2 * d), n = Math.max(1, Math.round(P / (e * 2.6)));
-    ctx.setLineDash([P / n / 2, P / n / 2]);
-    ctx.strokeStyle = '#FF7AAE';
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
   // jelly band: base, soft core, gloss line toward the outer edge
   ring(0);
-  ctx.lineWidth = jelly;
+  ctx.lineWidth = track;
   ctx.strokeStyle = '#A9EBDD';
   ctx.stroke();
-  ctx.lineWidth = jelly * 0.55;
+  ctx.lineWidth = track * 0.55;
   ctx.strokeStyle = 'rgba(255,255,255,0.35)';
   ctx.stroke();
-  ring(jelly * 0.3);
+  ring(track * 0.3);
   ctx.lineWidth = Math.max(1.5, track * 0.06);
   ctx.strokeStyle = 'rgba(255,255,255,0.75)';
   ctx.stroke();
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#E0558E';
-  for (const d of [track / 2, -track / 2, jelly / 2, -jelly / 2]) {
-    ring(d);
-    ctx.stroke();
-  }
   // Openings in the outer rim and wall. Local frame: +x points out of the loop, the rect spans rim to wall.
   const open = (px, py, out, hw, fill) => {
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(out);
     ctx.beginPath();
-    ctx.rect(track / 2 - e - 4, -hw, e + wall + 9, 2 * hw);
+    ctx.rect(track / 2 - 4, -hw, wall + 9, 2 * hw);
     fill();
     ctx.restore();
   };
@@ -547,7 +447,7 @@ function loopArt(ctx, rect, track, feeders) {
       ctx.clip();
       ctx.rotate(-Math.atan2(ay - by, ax - bx));
       ctx.translate(-bx, -by);
-      feederArt(ctx, f, track, e, wall);
+      feederArt(ctx, f, track, wall);
     });
   }
   // the gate at bottom centre, with gold posts
@@ -557,14 +457,14 @@ function loopArt(ctx, rect, track, feeders) {
   ctx.globalCompositeOperation = 'source-over';
   for (const px of [gx - hw, gx + hw]) {
     ctx.beginPath();
-    ctx.arc(px, wy, wall * 0.8, 0, TAU);
+    ctx.arc(px, wy, wall * 1.4, 0, TAU);
     ctx.fillStyle = '#FFC233';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#C17C00';
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(px - wall * 0.25, wy - wall * 0.25, wall * 0.3, 0, TAU);
+    ctx.arc(px - wall * 0.45, wy - wall * 0.45, wall * 0.5, 0, TAU);
     ctx.fillStyle = '#FFF3A6';
     ctx.fill();
   }
@@ -572,8 +472,7 @@ function loopArt(ctx, rect, track, feeders) {
 }
 
 // A walled feeder path along a polyline, drawn as stacked strokes so it matches the loop's layers.
-function feederArt(ctx, pts, track, e, wall) {
-  const jelly = track - 2 * e;
+function feederArt(ctx, pts, track, wall) {
   ctx.save();
   ctx.beginPath();
   pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
@@ -583,14 +482,12 @@ function feederArt(ctx, pts, track, e, wall) {
   ctx.strokeStyle = SHADOW + '0.08)';
   ctx.stroke();
   ctx.translate(0, -6);
-  // wall (light stripe = base, light, base bands), outlined rims, jelly
+  // wall (light stripe = base, light, base bands), jelly
   const layers = [
     [track + 2 * wall + 3, WALL[0]], [track + 2 * wall, WALL[1]], [track + wall * 1.4, WALL[2]], [track + wall * 0.6, WALL[1]],
-    [track + 3, '#E0558E'], [track, '#FFFFFF'], [track, '#FF7AAE', [e * 1.3, e * 1.3]],
-    [jelly + 3, '#E0558E'], [jelly, '#A9EBDD'], [jelly * 0.55, 'rgba(255,255,255,0.35)'],
+    [track, '#A9EBDD'], [track * 0.55, 'rgba(255,255,255,0.35)'],
   ];
-  for (const [lw, c, dash] of layers) {
-    ctx.setLineDash(dash || []);
+  for (const [lw, c] of layers) {
     ctx.lineWidth = lw;
     ctx.strokeStyle = c;
     ctx.stroke();
@@ -659,7 +556,7 @@ function spotArt(ctx, x, y, w, h, type) {
   if (type === 'vip') {
     ctx.save();
     ctx.translate(cx, cy - m * 0.14);
-    symbolPath(ctx, 'star', m * 0.24);
+    starPath(ctx, m * 0.24);
     ctx.lineWidth = m * 0.07;
     ctx.strokeStyle = line;
     ctx.stroke();
@@ -776,7 +673,7 @@ export function drawCoin(ctx, x, y, r) {
   ctx.lineWidth = lw * 0.7;
   ctx.strokeStyle = 'rgba(168,100,0,0.55)';
   ctx.stroke();
-  symbolPath(ctx, 'star', r * 0.42);
+  starPath(ctx, r * 0.42);
   ctx.lineWidth = r * 0.1;
   ctx.strokeStyle = '#C07A00';
   ctx.stroke();

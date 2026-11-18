@@ -20,7 +20,7 @@ icon.width = icon.height = 180
 const g = icon.getContext('2d')
 g.fillStyle = '#FFE3F0'
 g.fillRect(0, 0, 180, 180)
-drawBus(g, 90, 88, 66, 150, 0, 0, '')
+drawBus(g, 90, 88, 66, 150, 0, 0)
 $('icon').href = icon.toDataURL()
 
 const coins = () => ($('coinNum').textContent = progress.coins)

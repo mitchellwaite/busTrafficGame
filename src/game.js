@@ -14,15 +14,15 @@ const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = 
 // low enough that phones in portrait fill the width even in Safari or under a doubled status bar margin (an iPhone
 // Home Screen app needs ~1174); only squatter screens shrink to fit the height, with margins at the sides.
 // BAR = room kept under the lot for the power-up buttons (#powerups).
-const W = 720, ROAD = 40, LOT_TOP = 536, BAR = 110, TRACK = 46, PEEP_R = 16
-const LOOP = { x: 155, y: 136, w: 410, h: 200 } // centreline ~1048 px: 30 passengers sit ~35 px apart
-const SPOT_Y = 412, SPOT_W = 76, SPOT_H = 112, SPOT_CY = SPOT_Y + SPOT_H / 2, LANE_Y = 392
+const W = 720, ROAD = 40, LOT_TOP = 554, BAR = 110, TRACK = 62, PEEP_R = 27
+const LOOP = { x: 130, y: 138, w: 460, h: 206 } // centreline ~1155 px: 30 passengers sit ~38 px apart, ~36 px wide
+const SPOT_Y = 430, SPOT_W = 76, SPOT_H = 112, SPOT_CY = SPOT_Y + SPOT_H / 2, LANE_Y = 410 // lane: clear below the loop
 const PARK_W = 48, PARK_LEN = { 1: 56, 2: 82, 3: 106 }, BADGE = 64 // parked bus size by length in lot units; its badge
 // Boarding: OUT s to step down through the gate to EXIT_Y (clear of the wall), then a HOP s leap into the bus whose
 // arc is low enough that it never rises back over the wall.
 const OUT = 0.12, HOP = 0.38, SPARK = 0.6, COUNTDOWN = 10
 const LAP = 5 // seconds per lap of the loop; passengers walk the feeders at the same pace
-const GATE = 0.5, GATE_PT = loopPoint(LOOP, GATE), EXIT_Y = GATE_PT.y + 52 // loop param of the boarding gate (bottom centre)
+const GATE = 0.5, GATE_PT = loopPoint(LOOP, GATE), EXIT_Y = GATE_PT.y + 66 // loop param of the boarding gate (bottom centre)
 const spotX = (i) => 66 + 84 * i
 const clamp01 = (u) => Math.min(1, Math.max(0, u))
 const frac = (u) => u - Math.floor(u)
@@ -167,8 +167,8 @@ const toward = (b, a, r) => [0, 1].map((k) => b[k] + ((a[k] - b[k]) * r) / Math.
 // Polyline with each inner corner rounded off by a quadratic curve.
 const rounded = (pts, r) => [pts[0], ...pts.slice(1, -1).flatMap((b, i) => bez(toward(b, pts[i], r), b, toward(b, pts[i + 2], r))), pts.at(-1)]
 // STEP + JOIN_T stays under LAP / 30 (a place passes every ~0.17 s) so an arm can fill consecutive free places.
-const MID = LOOP.y + LOOP.h / 2, GAP = 34, STEP = 0.1, JOIN_T = 0.06, WAIT = 36
-const ARM = [[-60, 135], [52, 135], [52, MID], [LOOP.x, MID]]
+const MID = LOOP.y + LOOP.h / 2, GAP = 38, STEP = 0.1, JOIN_T = 0.06, WAIT = 42
+const ARM = [[-60, LOOP.y], [44, LOOP.y], [44, MID], [LOOP.x, MID]]
 const FEEDERS = [rounded(ARM, 40), rounded(ARM.map(([x, y]) => [W - x, y]), 40)]
 const ARMS = FEEDERS.map((pts, i) => ({ pts, len: pathLen(pts), at: i ? 0.25 : 0.75 }))
 // Which arm a passenger queues on (0 left, 1 right); each arm is one continuous line streaming in from off-screen.
@@ -500,7 +500,7 @@ function drawOne(b, v, ph) {
   const seats = () => b.size - v.landings.filter((t) => t <= now).length || ''
   // Parked-size buses carry a big badge (seats still to fill) so the count reads on a phone.
   const parked = (x, y, a, label) => {
-    drawBus(ctx, x, y, PARK_W, plen, a, b.color, null, b.length)
+    drawBus(ctx, x, y, PARK_W, plen, a, b.color, b.length)
     drawBadge(ctx, x, y, BADGE, b.color, label)
   }
   if (ph === 'parked') return parked(spotX(v.spot), SPOT_CY, 0, seats())
@@ -513,11 +513,11 @@ function drawOne(b, v, ph) {
     const d = m.len * (1 - (1 - clamp01(tw / m.dur)) ** 2), p = pose(m.path, d)
     const k = 1 + (PARK_W / w - 1) * clamp01(d / m.first), fade = clamp01((d - m.len + m.last) / m.last)
     // shrink to parked width on the way out of the lot, cross-fade to the parked sprite on the way into the spot
-    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, '', b.length))
+    scaled(p.x, p.y, k, 1 - fade, () => drawBus(ctx, 0, 0, w, len, p.a, b.color, b.length))
     if (fade > 0) scaled(p.x, p.y, 1, fade, () => parked(0, 0, p.a, seats()))
     return
   }
-  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, '', b.length))
+  if (ph === 'vanish') return scaled(v.tp.x, v.tp.y, 1 - (now - v.tp.t) / 0.25, 1, () => drawBus(ctx, 0, 0, w, len, v.tp.a, b.color, b.length))
   if (ph === 'appear') {
     const u = clamp01((now - v.tp.appear) / 0.25) - 1 // ease-out-back pop
     return scaled(spotX(v.spot), SPOT_CY, 1 + 2.7 * u ** 3 + 1.7 * u ** 2, 1, () => parked(0, 0, 0, seats()))
@@ -542,7 +542,7 @@ function drawOne(b, v, ph) {
     ctx.fillRect(-hw, -hl, 2 * hw, 2 * hl)
     ctx.restore()
   }
-  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, '', b.length)
+  drawBus(ctx, p.x + dx * off, p.y + dy * off, w, len, a, b.color, b.length)
 }
 
 // The upcoming queue on each arm: everyone not yet on the loop, including passengers the rules have not let in yet,

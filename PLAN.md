@@ -50,7 +50,7 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 │ ⌂  ↻  »   Level 12    🪙 150  │  HUD: home, restart, fast-forward (2x animation, toggles), level, coins
 │ ╲ arm                 arm ╱ │  walled queue paths from off-screen top-left / top-right join the loop's ends
 │  ═╭───────────────────────╮═  │
-│   │  passenger loop (30)  │   │  compact walled track, 30 peeps packed ~35 px apart; arms show who's next
+│   │  passenger loop (30)  │   │  wide walled track, 30 big peeps packed ~38 px apart; arms show who's next
 │   ╰──────────╡gate╞───────╯   │  passengers leave only through the gate at bottom centre to board
 │ [VIP][ 1 ][ 2 ][ 3 ][ 4 ][🔒][🔒][🔒] │  8 spots: VIP, 4 open, 3 locked (each tagged 🪙50: tap to unlock)
 │ ═══════════ road ═════════════ │
@@ -198,48 +198,47 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
 
 ## 8. Candy art style (`src/art.js`, pure drawing functions)
 
-- **Palette (8)**, each colour with a matching shape symbol for colour-blind players:
+- **Palette (9):** colour alone tells buses and passengers apart (there are no symbols), so the colours are bright, saturated and spread around the colour wheel. A level uses up to 8 of them, picked at random (`MAX_COLORS` in `config.js` = the palette size).
 
-  | Colour | Hex | Symbol |
-  |---|---|---|
-  | cherry | `#FF4D6D` | heart |
-  | tangerine | `#FF9F1C` | circle |
-  | lemon | `#FFD23F` | star |
-  | lime | `#7BD389` | triangle |
-  | sky | `#4CC9F0` | square |
-  | grape | `#9B5DE5` | diamond |
-  | bubblegum | `#F15BB5` | flower |
-  | teal | `#00BBA7` | cross |
+  | Colour | Hex |
+  |---|---|
+  | cherry | `#FF2D4F` |
+  | tangerine | `#FF8A00` |
+  | lemon | `#FFD60A` |
+  | lime | `#3FD957` |
+  | blue | `#2E8BFF` |
+  | grape | `#9B47FF` |
+  | bubblegum | `#FF4FC4` |
+  | teal | `#00D2C2` |
+  | chocolate | `#9A5A2C` |
 
 - **Buses (top-down):**
   - Rounded body with a vertical gradient (light → base → dark) and a darker 3 px outline.
   - A white gloss strip, glossy windows along the sides (one per side per unit of length: 1, 2 or 3, the same in the lot and in a spot), a windscreen at the nose and a soft drop shadow.
-  - A roof badge with the colour symbol only; the bus length shows its size. On 1-unit buses it is nudged to the rear so the windscreen shows which way they face. Only parked buses show a number: a larger badge with the seats still to fill.
-- **Passengers ("peeps"):** gumdrop body + round head in their colour, a gloss dot, and the colour symbol on the belly.
+  - No badge in the lot; the bus length shows its size. Only parked buses show a number: a white badge with the seats still to fill, gone once the bus is full.
+- **Passengers ("peeps"):** gumdrop body + round head in their colour, with a gloss dot. They are drawn big (r = 27, about 36 px wide) so the colours read on a phone.
 - **Spots:** rounded pads with white dashed lines. VIP is gold with a star and a "VIP" label. Locked spots are grey with a padlock.
 - **Power-up buttons:** candy pills (gold ★ VIP, green ✨ Fill), each with a coin and its cost. They pulse when stuck and are greyed out when unusable or unaffordable.
 - **Price tag:** a dark pill with a coin and the amount (`drawPrice`), on each locked spot.
 - **Coin:** a gold glossy disc, used in the coin counter on every screen.
-- **Loop:** jelly-style rounded track with a candy-stripe edge. **Road:** soft lavender-grey. **Background:** light blue with a soft pink glow in the middle and faint white polka dots, drawn as the page background in `style.css` (not on the canvas) so iOS shows it behind the Dynamic Island, the home bar and Safari's bars too. An iOS Home Screen app leaves a plain strip, as tall as the status bar, below the page; the page can't draw there, and making the page taller only pushes the bottom buttons into it. The page's plain base colour, which iOS shows outside the page (Safari 26 tints its top bar with it and ignores theme-color), is the same light blue as both ends of the wallpaper (and so is theme-color), so every edge matches. The layout starts at twice the status bar inset: iOS blurs content under the status bar down to about twice its height, which fuzzed the HUD.
+- **Loop:** jelly-style rounded track between two thin soft-grey walls, 62 px wide so the peeps fill it. The arms use the same walls. **Road:** soft lavender-grey. **Background:** light blue with a soft pink glow in the middle and faint white polka dots, drawn as the page background in `style.css` (not on the canvas) so iOS shows it behind the Dynamic Island, the home bar and Safari's bars too. An iOS Home Screen app leaves a plain strip, as tall as the status bar, below the page; the page can't draw there, and making the page taller only pushes the bottom buttons into it. The page's plain base colour, which iOS shows outside the page (Safari 26 tints its top bar with it and ignores theme-color), is the same light blue as both ends of the wallpaper (and so is theme-color), so every edge matches. The layout starts at twice the status bar inset: iOS blurs content under the status bar down to about twice its height, which fuzzed the HUD.
 - **Teleport:** a sparkle burst at the old position and at the VIP spot.
 - **Drawing conventions:**
   - Every bus is drawn nose-up, centred on (0,0); the caller translates/rotates.
   - Parked buses are drawn at a fixed size to fit the spot row.
 
-Colours are passed around as **palette indices** (0–7) everywhere. The sim only ever sees numbers.
+Colours are passed around as **palette indices** (0–8) everywhere. The sim only ever sees numbers.
 
 ```js
 // src/art.js: pure Canvas 2D, no game state, no imports from other src files
-export const PALETTE                     // [{ name, hex, symbol }] × 8, in the table order above
+export const PALETTE                     // [{ name, hex }] × 9, in the table order above
 drawLot(ctx, rect, road)                // rect = {x,y,w,h} of the lot; road = road width drawn around it
 drawLoop(ctx, rect, track, feeders)     // the walled passenger track, gate at bottom centre, feeder paths
 loopPoint(rect, t) → {x, y}             // point on the track centreline, t in [0,1); used to place peeps
 drawSpot(ctx, x, y, w, h, type)         // 'open' | 'vip' | 'locked'; (x,y) = top-left
-drawBus(ctx, x, y, w, len, angle, color, label, windows) // centre (x,y); angle radians, 0 = nose up, clockwise; windows per side;
-                                        // the roof badge (symbol + label) stays upright at any angle; label null = no badge
-drawBadge(ctx, x, y, size, color, label) // a badge on its own
+drawBus(ctx, x, y, w, len, angle, color, windows) // centre (x,y); angle radians, 0 = nose up, clockwise; windows per side
+drawBadge(ctx, x, y, size, color, label) // upright number badge; '' draws nothing
 drawPeep(ctx, x, y, r, color)
-drawSymbol(ctx, x, y, r, color)         // the colour's shape symbol
 drawSparkle(ctx, x, y, t)               // t = 0..1 animation progress
 drawCoin(ctx, x, y, r)
 coinDataURL(px) → string                // for the DOM coin counter
@@ -305,7 +304,7 @@ All settled:
 - Boarding: matching passengers board as they pass the gate at the bottom centre of the loop.
 - Directions: 8 headings in 45° steps; diagonal buses from level 11.
 - Seats and lengths: 4/6/10 seats = 1/2/3 units, on a free-form lot that zooms to fit.
-- Colour-blind symbols: on.
+- Colour-blind symbols: off. Colour alone, with bright, well-separated colours.
 - Loop: 30 on screen, fed by two arms that show the upcoming queue.
 - Power-ups: VIP 25 coins per use; unlocking a spot 50 coins (tap the locked spot), for the current level only; Fill 75 coins.
 - Coins: 50, first completion of a level only.

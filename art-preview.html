@@ -19,8 +19,8 @@
 </div>
 <script type="module">
 import {
-  PALETTE, drawLot, drawLoop, loopPoint, drawSpot, drawBus,
-  drawPeep, drawSymbol, drawSparkle, drawCoin, coinDataURL,
+  PALETTE, drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge,
+  drawPeep, drawSparkle, drawCoin, coinDataURL,
 } from './src/art.js';
 
 const W = 1480, H = 1840, CELL = 64;
@@ -32,7 +32,6 @@ document.getElementById('coin48').src = coinDataURL(48);
 document.getElementById('coin96').src = coinDataURL(96);
 
 const rad = (d) => (d * Math.PI) / 180;
-const SEATS = { 2: 4, 3: 6, 4: 10 };
 const DIRS = { up: [0, -1, 0], right: [1, 0, 90], down: [0, 1, 180], left: [-1, 0, 270] };
 function label(s, x, y, size = 15, align = 'center') {
   ctx.font = `700 ${size}px system-ui, sans-serif`;
@@ -47,8 +46,8 @@ const lotBuses = [ // nose col, nose row, dir, cells, colour
   [2, 4, 'up', 4, 4], [0, 6, 'up', 2, 5], [4, 6, 'down', 3, 6], [4, 7, 'left', 2, 7], [1, 5, 'right', 2, 0],
 ];
 const spots = ['vip', 'open', 'open', 'open', 'open', 'locked', 'locked', 'locked'];
-const parked = [[0, 0, 3, '12/20'], [1, 4, 2, '3/10'], [2, 2, 4, '40/40'], [3, 7, 3, '0/20']]; // spot, colour, cells, label
-const loop = { x: 100, y: 1290, w: 640, h: 260 }, TRACK = 46, PEEP_R = 16;
+const parked = [[0, 0, 3, 8], [1, 4, 2, 3], [2, 2, 4, ''], [3, 7, 3, 10]]; // spot, colour, cells, seats left ('' = full)
+const loop = { x: 100, y: 1290, w: 640, h: 260 }, TRACK = 62, PEEP_R = 27;
 const peeps = Array.from({ length: 50 }, (_, i) => ({ ...loopPoint(loop, i / 50), c: (i * 5 + (i >> 2)) % 8 }))
   .sort((a, b) => a.y - b.y); // lower peeps overlap upper ones
 
@@ -63,7 +62,7 @@ function draw(time) {
   for (const [c, r, dir, n, color] of lotBuses) {
     const [dx, dy, deg] = DIRS[dir];
     drawBus(ctx, lot.x + (c + 0.5 - (dx * (n - 1)) / 2) * CELL, lot.y + (r + 0.5 - (dy * (n - 1)) / 2) * CELL,
-      CELL - 12, n * CELL - 12, rad(deg), color, SEATS[n]);
+      CELL - 12, n * CELL - 12, rad(deg), color);
   }
 
   PALETTE.forEach((p, i) => {
@@ -72,37 +71,40 @@ function draw(time) {
     let y = 140;
     for (const n of [2, 3, 4]) {
       const len = n * CELL - 12;
-      drawBus(ctx, x, y + len / 2, CELL - 12, len, 0, i, SEATS[n]);
+      drawBus(ctx, x, y + len / 2, CELL - 12, len, 0, i);
       y += len + 22;
     }
   });
 
   const ay = 900;
   [[0, 0], [90, 1], [180, 2], [270, 3], [30, 4]].forEach(([deg, c], i) => {
-    drawBus(ctx, 120 + i * 220, ay, 52, 180, rad(deg), c, 20);
+    drawBus(ctx, 120 + i * 220, ay, 52, 180, rad(deg), c);
     label(deg + '°', 120 + i * 220, ay + 120);
   });
-  drawBus(ctx, 1220, ay, 52, 180, time * 0.8, 5, 20);
+  drawBus(ctx, 1220, ay, 52, 180, time * 0.8, 5);
   label('spinning', 1220, ay + 120);
-  drawBus(ctx, 1390, ay, 30, 76, -time * 1.3, 6, '12/20');
+  drawBus(ctx, 1390, ay, 30, 76, -time * 1.3, 6);
 
   label('Spots (VIP, 4 open, 3 locked) with parked buses w=36', 60, 1050, 15, 'left');
   spots.forEach((t, i) => drawSpot(ctx, 60 + i * 84, 1070, 76, 112, t));
-  for (const [i, c, n, text] of parked) drawBus(ctx, 60 + i * 84 + 38, 1126, 36, { 2: 64, 3: 84, 4: 100 }[n], 0, c, text);
+  for (const [i, c, n, text] of parked) {
+    drawBus(ctx, 60 + i * 84 + 38, 1126, 36, { 2: 64, 3: 84, 4: 100 }[n], 0, c);
+    drawBadge(ctx, 60 + i * 84 + 38, 1126, 64, c, text);
+  }
   label('w=24 parked-size', 1010, 1050, 15, 'left');
   [[0, 2, 0], [0, 3, 1], [0, 4, 2], [90, 3, 3], [90, 2, 6]].forEach(([deg, n, c], i) =>
-    drawBus(ctx, 1030 + i * 84, 1126, 24, n * 20, rad(deg), c, '12/20'));
+    drawBus(ctx, 1030 + i * 84, 1126, 24, n * 20, rad(deg), c));
 
-  label('Loop 640×260, track 46, 50 peeps r=16', loop.x + loop.w / 2, 1240);
+  label('Loop 640×260, track 62, 50 peeps r=27', loop.x + loop.w / 2, 1240);
   drawLoop(ctx, loop, TRACK);
   for (const p of peeps) drawPeep(ctx, p.x, p.y, PEEP_R, p.c);
 
   PALETTE.forEach((p, i) => {
     const x = 860 + i * 78;
-    drawSymbol(ctx, x, 1300, 22, i);
-    label(p.symbol, x, 1345, 13);
-    drawPeep(ctx, x, 1420, 30, i);
-    drawSymbol(ctx, x, 1490, 9, i);
+    label(p.name, x, 1300, 13);
+    drawPeep(ctx, x, 1360, 30, i);
+    drawPeep(ctx, x, 1440, 24, i);
+    drawBus(ctx, x, 1530, 48, 82, 0, i, 2);
   });
 
   label('Sparkle t = 0, .25, .5, .75, 1', 60, 1640, 15, 'left');
