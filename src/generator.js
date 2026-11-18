@@ -8,8 +8,10 @@ const GAP = 0.08 // least clearance between bus bodies, in lot units
 
 // Deterministic: the same n always gives the same (deep-equal) level, verified winnable by tap only. From level 11 the
 // winning taps must also park at least one bus to wait, so the level asks for some planning.
+// Seats were doubled after release. The lot (buses, colours, solution) is still picked exactly as before, by how it
+// plays with buses half as big, so no level's lot changed; the queue for the real seats is then drawn on its own.
 export function generateLevel(n) {
-  const d = difficulty(n)
+  const d = difficulty(n), need = n > 10 ? 1 : 0
   let noise = d.noise
   for (let attempt = 0, fails = 0; ; attempt++) {
     const rng = mulberry32(n * 1000 + attempt)
@@ -19,21 +21,29 @@ export function generateLevel(n) {
     const solution = removalOrder(out, rng)
     const palette = shuffle(rng, [...Array(MAX_COLORS).keys()]).slice(0, d.colors)
     shuffle(rng, buses.map((_, i) => palette[i % d.colors])).forEach((c, i) => (buses[i].color = c))
-    const keyed = []
-    for (const id of solution) for (let k = 0; k < buses[id].size; k++) keyed.push([keyed.length + rng() * noise, buses[id].color])
-    const level = {
-      level: n,
-      lot: { w: d.w, h: d.h },
-      buses,
-      queue: keyed.sort((a, b) => a[0] - b[0]).map((e) => e[1]),
-      loopCapacity: LOOP_CAPACITY,
-      spots: [...SPOTS],
-      solution,
+    const level = { level: n, lot: { w: d.w, h: d.h }, buses, queue: [], loopCapacity: LOOP_CAPACITY, spots: [...SPOTS], solution }
+    const half = buses.map((b) => ({ ...b, size: b.size / 2 }))
+    const peak = waits({ ...level, buses: half, queue: queue(rng, half, solution, noise) })
+    if (peak >= need) {
+      // The real queue: up to 20 tries from its own seeds, shuffling less after losses; failing that, the next lot.
+      let qNoise = d.noise
+      for (let q = 0, qFails = 0; q < 20; q++) {
+        level.queue = queue(mulberry32(1e9 + (n * 1000 + attempt) * 32 + q), buses, solution, qNoise)
+        const p = waits(level)
+        if (p >= need) return level
+        if (p < 0 && ++qFails % 3 === 0) qNoise *= 0.7
+      }
+      continue
     }
-    const peak = waits(level)
-    if (peak >= (n > 10 ? 1 : 0)) return level
     if (peak < 0 && ++fails % 3 === 0) noise *= 0.7 // lose: shuffle less; too easy: just try the next seed
   }
+}
+
+// Passengers for every seat, bus by bus in solution order, each drifting up to `noise` places later at random.
+function queue(rng, buses, solution, noise) {
+  const keyed = []
+  for (const id of solution) for (let k = 0; k < buses[id].size; k++) keyed.push([keyed.length + rng() * noise, buses[id].color])
+  return keyed.sort((a, b) => a[0] - b[0]).map((e) => e[1])
 }
 
 // Random non-overlapping buses with centres on a half-unit lattice, each rejected if it would close a cycle

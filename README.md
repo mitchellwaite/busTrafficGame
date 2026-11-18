@@ -11,7 +11,7 @@ I built this with AI because i was tired of the constant ads in all the bus game
 - **Tap a bus** to drive it straight ahead out of the lot and into the next free parking spot. If another bus is in the way, it bumps into it, bounces back and buzzes.
 - **Passengers** walk in along the two arms at the top and ride around the loop. When one passes the gate at the bottom, it hops into a parked bus of its own colour. If two buses of that colour are parked, the leftmost fills first.
 - **Full buses drive off** and free their spot. Each bus shows how many seats it still has to fill.
-- **Clear every bus to win.** Small buses seat 4, medium 6 and large 10.
+- **Clear every vehicle to win.** Cars seat 8, vans 12 and buses 20.
 - **Out of space:** when every open spot holds a bus that is still waiting, you have 10 seconds to use a power-up. If you can't afford one, the level is over.
 
 ## Power-ups

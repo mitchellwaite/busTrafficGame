@@ -71,7 +71,7 @@ On a wide PC window the portrait board stays centred and the side background fil
 
 ## 4. Game rules (exact, because the solver, tests and game all run this same code)
 
-**Lot.** A free-form area measured in units (1 unit = one bus width), with no grid. Each bus has a centre point and a heading in 45° steps, so later levels mix in diagonal buses, and a length set by its size: **4 seats = 1 unit, 6 = 2 units, 10 = 3 units**. Lots get more units across as the bus count grows, and the screen zooms the lot out to fit.
+**Lot.** A free-form area measured in units (1 unit = one bus width), with no grid. Each bus has a centre point and a heading in 45° steps, so later levels mix in diagonal buses, and a length set by its size: **a car seats 8 and is 1 unit long, a van 12 and 2 units, a bus 20 and 3 units**. (They are all "buses" to the rules and in the code.) Lots get more units across as the bus count grows, and the screen zooms the lot out to fit.
 
 **Tap a bus.** Its lane is the strip one bus wide straight ahead of its nose. It is blocked by any lot bus whose body reaches into that strip, and it bounces off the nearest one.
 - If the lane is clear, the bus drives out onto the road and into the free open spot that was **emptied longest ago** (never-used spots first, left to right), so quick taps spread along the row. Of those, it only takes one that is empty on screen (below). Normal driving never uses the VIP spot or the locked spots.
@@ -164,9 +164,11 @@ applyWin(p, n) → p'   // coins += 50 only if n === unlocked (first completion)
 2. **Place buses** at random centres on a half-unit lattice, with random headings and sizes, no overlaps and inside the lot (`src/geometry.js` has the rectangle maths). Reject a bus if it would close a cycle in the "blocks" graph (A waits on B while B waits on A). Removing buses only ever clears lanes, so an acyclic layout stays solvable for the lot part forever. If the lot fills up before the target count, keep it once it has the band's minimum.
 3. **Assign colours**, balanced, with every colour used at least once.
 4. **Build a witness tap order**: repeatedly pick a random bus whose lane is currently clear.
-5. **Build the passenger queue** from the witness: each bus's passengers in witness order, then jittered (each passenger's sort key = position + random × `noise`). More noise means the stream lines up less well with the lot, which forces the player to buffer buses in spots, and that is the main difficulty lever.
+5. **Build the passenger queue** from the witness (the first time with every bus at half its seats, see below): each bus's passengers in witness order, then jittered (each passenger's sort key = position + random × `noise`). More noise means the stream lines up less well with the lot, which forces the player to buffer buses in spots, and that is the main difficulty lever.
 6. **Verify** by replaying the witness through `sim.js` using **normal taps only, no VIP**. It must end in `won`. So every level is winnable with the 4 open spots alone, and VIP is a genuine bonus, which matters once it costs coins. From level 11 the replay must also leave at least one bus waiting in a spot, so the level asks for some planning. If verification fails, retry with the next seed. After a few lost replays, lower the noise.
 7. Return the level with `solution` = the witness.
+
+Seats were doubled (4/6/10 to 8/12/20) after levels had been played, and the lots were meant to stay the same. So steps 1–6 still run exactly as before with half-size buses: that picks the seed, the lot, the colours and the witness. Then the real queue for the full seats is drawn from its own seeds and verified the same way (up to 20 tries, shuffling less after losses; if all fail, the next seed). Levels 1–300 kept their lots exactly.
 
 **Tests** (`npm test`):
 - Rules: bounce; park uses open spots only; boarding cap; leftmost-first; depart frees the spot; win.
@@ -185,9 +187,9 @@ applyWin(p, n) → p'   // coins += 50 only if n === unlocked (first completion)
 
 | Levels | Colours | Buses | Sizes | Lot (units) | Diagonal | Queue noise |
 |---|---|---|---|---|---|---|
-| 1–2 | 2 | 3–4 | 4, 6 | 3×3 | – | low |
-| 3–5 | 3 | 5–7 | 4, 6 | 3×4 | – | low |
-| 6–10 | 4 | 8–12 | + 10 | 4×6 | – | medium |
+| 1–2 | 2 | 3–4 | 8, 12 | 3×3 | – | low |
+| 3–5 | 3 | 5–7 | 8, 12 | 3×4 | – | low |
+| 6–10 | 4 | 8–12 | + 20 | 4×6 | – | medium |
 | 11–20 | 5 | 12–18 | all | 6×6 | 10% | medium |
 | 21–35 | 6 | 16–24 | all | 6×8 | 20% | high |
 | 36–60 | 7 | 22–30 | all | 7×9 | 25% | high |
@@ -212,9 +214,11 @@ Generated levels are proven solvable. Whether they feel fun is something only pl
   | teal | `#00D2C2` |
   | chocolate | `#9A5A2C` |
 
-- **Buses (top-down):**
-  - Rounded body with a vertical gradient (light → base → dark) and a darker 3 px outline.
-  - A white gloss strip, glossy windows along the sides (one per side per unit of length: 1, 2 or 3, the same in the lot and in a spot), a windscreen at the nose and a soft drop shadow.
+- **Vehicles (top-down),** by length, the same in the lot and in a spot:
+  - Every body has a vertical gradient (light → base → dark), a darker outline and a soft drop shadow.
+  - **Car** (1 unit): drawn at 70% of its lane's width so it isn't a square. Round body, bonnet, windscreen, glossy roof, rear window, headlights, tail lights, wing mirrors and four tyres peeking out.
+  - **Van** (2 units): 88% of the lane's width. Boxy, with a short bonnet, a big windscreen, a cab window each side, a long ribbed roof, split rear doors with two windows, mirrors and tyres.
+  - **Bus** (3 units): full width. A windscreen at the nose, three glossy windows along each side, a roof panel with a white gloss strip and a rear window.
   - No badge in the lot; the bus length shows its size. Only parked buses show a number: a white badge with the seats still to fill, gone once the bus is full.
 - **Passengers ("peeps"):** gumdrop body + round head in their colour, with a gloss dot. They are drawn big (r = 27, about 36 px wide) so the colours read on a phone.
 - **Spots:** rounded pads with white dashed lines. VIP is gold with a star and a "VIP" label. Locked spots are grey with a padlock.
@@ -236,7 +240,7 @@ drawLot(ctx, rect, road)                // rect = {x,y,w,h} of the lot; road = r
 drawLoop(ctx, rect, track, feeders)     // the walled passenger track, gate at bottom centre, feeder paths
 loopPoint(rect, t) → {x, y}             // point on the track centreline, t in [0,1); used to place peeps
 drawSpot(ctx, x, y, w, h, type)         // 'open' | 'vip' | 'locked'; (x,y) = top-left
-drawBus(ctx, x, y, w, len, angle, color, windows) // centre (x,y); angle radians, 0 = nose up, clockwise; windows per side
+drawBus(ctx, x, y, w, len, angle, color, units) // centre (x,y); angle radians, 0 = nose up, clockwise; units 1 car, 2 van, 3 bus (default); w = lane width
 drawBadge(ctx, x, y, size, color, label) // upright number badge; '' draws nothing
 drawPeep(ctx, x, y, r, color)
 drawSparkle(ctx, x, y, t)               // t = 0..1 animation progress
@@ -303,7 +307,7 @@ Each agent gets this file as its spec plus a narrow brief: its files only, the �
 All settled:
 - Boarding: matching passengers board as they pass the gate at the bottom centre of the loop.
 - Directions: 8 headings in 45° steps; diagonal buses from level 11.
-- Seats and lengths: 4/6/10 seats = 1/2/3 units, on a free-form lot that zooms to fit.
+- Seats and lengths: car 8, van 12, bus 20 seats = 1/2/3 units, on a free-form lot that zooms to fit.
 - Colour-blind symbols: off. Colour alone, with bright, well-separated colours.
 - Loop: 30 on screen, fed by two arms that show the upcoming queue.
 - Power-ups: VIP 25 coins per use; unlocking a spot 50 coins (tap the locked spot), for the current level only; Fill 75 coins.

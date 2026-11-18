@@ -106,7 +106,7 @@ function starPath(g, r) {
   g.closePath();
 }
 
-// ---------- buses ----------
+// ---------- vehicles: car (1 unit long), van (2), bus (3) ----------
 
 function busShadow(W, L) {
   const b = W * 0.14, p = Math.ceil(b * 2.5);
@@ -120,25 +120,173 @@ function busShadow(W, L) {
   }];
 }
 
-function busBody(W, L, T, n) {
-  return [-W / 2 - 1, -L / 2 - 1, W + 2, L + 2, (g) => {
-    const u = W, t = -L / 2, b = L / 2, lw = Math.min(3, Math.max(1.5, W / 16));
-    g.lineJoin = 'round';
-    // body: vertical candy gradient + side shading for a rounded roof edge
+const outline = (W) => Math.min(3, Math.max(1.5, W / 16));
+
+// Nose-up body W × L with corner radius r: vertical candy gradient, side shading for a rounded edge, outline.
+function shell(g, W, L, r, T) {
+  const lw = outline(W), t = -L / 2;
+  g.lineJoin = 'round';
+  g.beginPath();
+  rr(g, -W / 2 + lw / 2, t + lw / 2, W - lw, L - lw, r);
+  g.fillStyle = vgrad(g, t, -t, T.light, T.base, T.dark);
+  g.fill();
+  const side = g.createLinearGradient(-W / 2, 0, W / 2, 0);
+  side.addColorStop(0, 'rgba(255,255,255,0.3)');
+  side.addColorStop(0.22, 'rgba(255,255,255,0)');
+  side.addColorStop(0.78, 'rgba(40,0,60,0)');
+  side.addColorStop(1, 'rgba(40,0,60,0.2)');
+  g.fillStyle = side;
+  g.fill();
+  g.lineWidth = lw;
+  g.strokeStyle = T.line;
+  g.stroke();
+}
+
+// Fill and outline the current path as tinted glass (gradient from y0 to y1).
+function glass(g, y0, y1, lw) {
+  g.fillStyle = vgrad(g, y0, y1, '#8FB0F5', '#4558A8', '#34418A');
+  g.fill();
+  g.lineWidth = lw;
+  g.stroke();
+}
+
+// Head and tail lights at the front and back corners, x = ±dx from the centre.
+function lights(g, W, L, dx, T) {
+  const t = -L / 2, b = L / 2, lw = outline(W) * 0.5;
+  g.beginPath();
+  for (const k of [-1, 1]) {
+    g.moveTo(k * dx + W * 0.1, t + L * 0.035);
+    g.ellipse(k * dx, t + L * 0.035, W * 0.1, Math.min(L * 0.03, W * 0.06), 0, 0, TAU);
+  }
+  g.fillStyle = '#FFF6C8';
+  g.fill();
+  g.lineWidth = lw;
+  g.strokeStyle = T.line;
+  g.stroke();
+  g.beginPath();
+  for (const k of [-1, 1]) rr(g, k * dx - W * 0.09, b - Math.min(L * 0.045, W * 0.08), W * 0.18, Math.min(L * 0.025, W * 0.05), W * 0.02);
+  g.fillStyle = '#E8304A';
+  g.fill();
+}
+
+// Tyres peeking out of both sides, centred at each of ys, h long; drawn before the body, which hides their inner part.
+function wheels(g, W, ys, h) {
+  g.beginPath();
+  for (const y of ys) for (const k of [-1, 1]) rr(g, k * W * 0.47 - W * 0.08, y - h / 2, W * 0.16, h, W * 0.05);
+  g.fillStyle = '#3A3448';
+  g.fill();
+}
+
+// Wing mirrors sticking out of both sides at y.
+function mirrors(g, W, y, T) {
+  g.beginPath();
+  for (const k of [-1, 1]) {
+    g.moveTo(k * (W / 2 + W * 0.02) + W * 0.09, y);
+    g.ellipse(k * (W / 2 + W * 0.02), y, W * 0.09, W * 0.06, 0, 0, TAU);
+  }
+  g.fillStyle = T.base;
+  g.fill();
+  g.lineWidth = outline(W) * 0.7;
+  g.strokeStyle = T.line;
+  g.stroke();
+}
+
+// A small round car: bonnet, windscreen, roof, rear window, boot.
+function carBody(W, L, T) {
+  const m = W * 0.13;
+  return [-W / 2 - m, -L / 2 - 1, W + 2 * m, L + 2, (g) => {
+    const t = -L / 2, lw = outline(W);
+    wheels(g, W, [t + L * 0.21, t + L * 0.8], L * 0.17);
+    mirrors(g, W, t + L * 0.34, T);
+    shell(g, W, L, Math.min(W * 0.42, L * 0.3), T);
+    lights(g, W, L, W * 0.27, T);
     g.beginPath();
-    rr(g, -W / 2 + lw / 2, t + lw / 2, W - lw, L - lw, u * 0.3);
-    g.fillStyle = vgrad(g, t, b, T.light, T.base, T.dark);
-    g.fill();
-    const side = g.createLinearGradient(-W / 2, 0, W / 2, 0);
-    side.addColorStop(0, 'rgba(255,255,255,0.3)');
-    side.addColorStop(0.22, 'rgba(255,255,255,0)');
-    side.addColorStop(0.78, 'rgba(40,0,60,0)');
-    side.addColorStop(1, 'rgba(40,0,60,0.2)');
-    g.fillStyle = side;
-    g.fill();
-    g.lineWidth = lw;
+    rr(g, -W * 0.37, t + L * 0.25, W * 0.74, L * 0.17, W * 0.14);
+    rr(g, -W * 0.32, t + L * 0.75, W * 0.64, L * 0.1, W * 0.1);
     g.strokeStyle = T.line;
+    glass(g, t + L * 0.25, t + L * 0.42, lw * 0.4);
+    g.beginPath();
+    rr(g, -W * 0.33, t + L * 0.44, W * 0.66, L * 0.29, W * 0.16);
+    g.fillStyle = vgrad(g, t + L * 0.44, t + L * 0.73, T.hi, T.light, T.base);
+    g.fill();
+    g.lineWidth = lw * 0.5;
+    g.strokeStyle = T.dark;
     g.stroke();
+    // gloss on the bonnet and the roof
+    g.beginPath();
+    g.ellipse(-W * 0.16, t + L * 0.13, W * 0.15, L * 0.035, -0.2, 0, TAU);
+    g.ellipse(-W * 0.14, t + L * 0.52, W * 0.1, L * 0.03, -0.2, 0, TAU);
+    g.fillStyle = 'rgba(255,255,255,0.65)';
+    g.fill();
+  }];
+}
+
+// A boxy van: short bonnet, big windscreen, cab side windows, a long ribbed roof and split rear doors.
+function vanBody(W, L, T) {
+  const m = W * 0.13;
+  return [-W / 2 - m, -L / 2 - 1, W + 2 * m, L + 2, (g) => {
+    const u = W, t = -L / 2, b = L / 2, lw = outline(W);
+    wheels(g, W, [t + u * 0.5, b - u * 0.45], u * 0.32);
+    mirrors(g, W, t + u * 0.42, T);
+    shell(g, W, L, u * 0.2, T);
+    lights(g, W, L, W * 0.3, T);
+    // bonnet panel
+    g.beginPath();
+    rr(g, -W * 0.36, t + u * 0.08, W * 0.72, u * 0.2, u * 0.08);
+    g.fillStyle = vgrad(g, t, t + u * 0.3, T.hi, T.light);
+    g.fill();
+    g.lineWidth = lw * 0.4;
+    g.strokeStyle = T.dark;
+    g.stroke();
+    // glass: windscreen, a cab window each side, two rear-door windows
+    g.beginPath();
+    rr(g, -W * 0.4, t + u * 0.33, W * 0.8, u * 0.28, u * 0.09);
+    rr(g, -W * 0.47, t + u * 0.66, W * 0.09, u * 0.32, u * 0.04);
+    rr(g, W * 0.38, t + u * 0.66, W * 0.09, u * 0.32, u * 0.04);
+    rr(g, -W * 0.33, b - u * 0.13, W * 0.29, u * 0.07, u * 0.03);
+    rr(g, W * 0.04, b - u * 0.13, W * 0.29, u * 0.07, u * 0.03);
+    g.strokeStyle = T.line;
+    glass(g, t + u * 0.33, t + u * 0.61, lw * 0.4);
+    // roof with ribs across it
+    const r0 = t + u * 0.66, r1 = b - u * 0.2;
+    g.beginPath();
+    rr(g, -W * 0.34, r0, W * 0.68, r1 - r0, u * 0.1);
+    g.fillStyle = vgrad(g, r0, r1, T.hi, T.light, T.base);
+    g.fill();
+    g.lineWidth = lw * 0.5;
+    g.strokeStyle = T.dark;
+    g.stroke();
+    const ribs = Math.max(2, Math.round((r1 - r0) / (u * 0.32)));
+    g.beginPath();
+    for (let i = 1; i < ribs; i++) {
+      const y = r0 + ((r1 - r0) * i) / ribs;
+      g.moveTo(-W * 0.26, y);
+      g.lineTo(W * 0.26, y);
+    }
+    g.lineWidth = lw * 0.7;
+    g.strokeStyle = 'rgba(40,0,60,0.16)';
+    g.stroke();
+    // split line between the rear doors
+    g.beginPath();
+    g.moveTo(0, r1 + u * 0.02);
+    g.lineTo(0, b - lw);
+    g.lineWidth = lw * 0.5;
+    g.strokeStyle = T.dark;
+    g.stroke();
+    // gloss on the windscreen and the roof
+    g.beginPath();
+    g.ellipse(-W * 0.18, t + u * 0.14, W * 0.14, u * 0.03, -0.2, 0, TAU);
+    rr(g, -W * 0.26, r0 + u * 0.08, W * 0.06, r1 - r0 - u * 0.16, W * 0.03);
+    g.fillStyle = 'rgba(255,255,255,0.6)';
+    g.fill();
+  }];
+}
+
+function busBody(W, L, T) {
+  const n = 3; // side windows a side
+  return [-W / 2 - 1, -L / 2 - 1, W + 2, L + 2, (g) => {
+    const u = W, t = -L / 2, b = L / 2, lw = outline(W);
+    shell(g, W, L, u * 0.3, T);
     // glass: windscreen at the nose, side windows, rear window
     const ws = [-u * 0.35, t + u * 0.12, u * 0.7, u * 0.28, u * 0.13];
     const y0 = t + u * 0.5, y1 = b - u * 0.22;
@@ -150,10 +298,7 @@ function busBody(W, L, T, n) {
       rr(g, -u * 0.425, y0 + i * step, u * 0.125, step - u * 0.07, u * 0.05);
       rr(g, u * 0.3, y0 + i * step, u * 0.125, step - u * 0.07, u * 0.05);
     }
-    g.fillStyle = vgrad(g, ws[1], ws[1] + ws[3], '#8FB0F5', '#4558A8', '#34418A');
-    g.fill();
-    g.lineWidth = lw * 0.4;
-    g.stroke();
+    glass(g, ws[1], ws[1] + ws[3], lw * 0.4);
     g.save();
     g.beginPath();
     rr(g, ...ws);
@@ -215,10 +360,13 @@ function badge(mctx, W, color, label) {
 }
 
 const LIFT = 0.1; // bus shadow drop, × width; always straight down on screen, whatever the heading
+// By length in units: the body drawn, and its width × the lane's. Cars and vans are narrower than their lane, so a
+// 1-unit car isn't a square.
+const BODY = [null, carBody, vanBody, busBody], BODY_W = [0, 0.7, 0.88, 1];
 
 // Shadow + body pre-turned by q quarter turns, so cardinal buses blit without rotation.
-function busTurned(W, L, T, q, n) {
-  const sh = busShadow(W, L), body = busBody(W, L, T, n), p = -sh[0] - W / 2;
+function busTurned(W, L, T, q, u) {
+  const bw = W * BODY_W[u], sh = busShadow(bw, L), body = BODY[u](bw, L, T), p = -sh[0] - bw / 2;
   const hx = (q % 2 ? L : W) / 2 + p, hy = (q % 2 ? W : L) / 2 + p;
   return [-hx, -hy, 2 * hx, 2 * hy + W * LIFT, (g, s) => {
     g.save();
@@ -231,25 +379,24 @@ function busTurned(W, L, T, q, n) {
   }];
 }
 
-// windows = side windows per side; the game passes the bus's length in units (1, 2 or 3) so a bus keeps the same
-// windows when it shrinks from the lot into a spot. Left out, it is worked out from the proportions.
-export function drawBus(ctx, x, y, w, len, angle, color, windows) {
-  const W = Math.max(4, Math.round(w)), L = Math.max(4, Math.round(len)), T = TONES[color];
-  const n = windows ?? Math.max(1, Math.round((L - W * 0.72) / (W * 0.46)));
+// units = the vehicle's length in lot units: 1 car, 2 van, 3 bus (the same in the lot and in a spot, however it is
+// scaled). w is the width of its lane; cars and vans are drawn narrower.
+export function drawBus(ctx, x, y, w, len, angle, color, units = 3) {
+  const W = Math.max(4, Math.round(w)), L = Math.max(4, Math.round(len)), T = TONES[color], u = units;
   const q = Math.round(angle / (Math.PI / 2));
   ctx.save();
   ctx.translate(x, y);
   // Rotated drawImage is ~15× slower than an axis-aligned one (measured), and most buses sit at 0/90/180/270.
-  if (Math.abs(angle - (q * Math.PI) / 2) < 1e-4) sprite(ctx, `bq${color},${W},${L},${q & 3},${n}`, () => busTurned(W, L, T, q & 3, n));
+  if (Math.abs(angle - (q * Math.PI) / 2) < 1e-4) sprite(ctx, `bq${color},${W},${L},${q & 3},${u}`, () => busTurned(W, L, T, q & 3, u));
   else {
     ctx.save();
     ctx.translate(0, W * LIFT);
     ctx.rotate(angle);
-    sprite(ctx, `bs${W},${L}`, () => busShadow(W, L));
+    sprite(ctx, `bs${W},${L},${u}`, () => busShadow(W * BODY_W[u], L));
     ctx.restore();
     ctx.save();
     ctx.rotate(angle);
-    sprite(ctx, `bb${color},${W},${L},${n}`, () => busBody(W, L, T, n));
+    sprite(ctx, `bb${color},${W},${L},${u}`, () => BODY[u](W * BODY_W[u], L, T));
     ctx.restore();
   }
   ctx.restore();
