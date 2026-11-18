@@ -29,7 +29,7 @@ Browser puzzle game. You tap colour-coded buses to drive them out of a jammed pa
 - **Node's built-in test runner** (`node --test`, Node 24 is installed) for rules, progress and level verification. No test library.
 - Serve locally with `python serve.py` (ES modules don't load from `file://`). It is `python -m http.server` plus `Cache-Control: no-cache`, so edits are never hidden by a stale cached module.
 
-## 3. Screens (portrait, design space 720 × 1280, scaled to fit)
+## 3. Screens (portrait, design space 720 wide × at least 1150 tall, scaled to fit the width on phones)
 
 **Every screen** has a coin counter (🪙 150) pinned top-right.
 

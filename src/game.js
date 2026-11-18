@@ -10,7 +10,9 @@ import { drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, d
 const $ = (id) => document.getElementById(id)
 const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = $('vip'), fillBtn = $('fill')
 
-// Design space: 720 wide; height H >= 1280 follows the screen aspect and the extra goes to the lot.
+// Design space: 720 wide; height H >= MIN_H follows the screen aspect and the lot takes up the difference. MIN_H is
+// low enough that phones in portrait fill the width even in Safari or under a doubled status bar margin (an iPhone
+// Home Screen app needs ~1174); only squatter screens shrink to fit the height, with margins at the sides.
 // BAR = room kept under the lot for the power-up buttons (#powerups).
 const W = 720, ROAD = 40, LOT_TOP = 536, BAR = 110, TRACK = 46, PEEP_R = 16
 const LOOP = { x: 155, y: 136, w: 410, h: 200 } // centreline ~1048 px: 30 passengers sit ~35 px apart
@@ -25,6 +27,7 @@ const spotX = (i) => 66 + 84 * i
 const clamp01 = (u) => Math.min(1, Math.max(0, u))
 const frac = (u) => u - Math.floor(u)
 
+const MIN_H = 1150
 const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 // now = visual time (drives all animation), clock = play time (drives the stuck countdown), real = last frame's wall time.
 let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0, speed = 1
@@ -89,7 +92,7 @@ export function stop() {
 
 function fit() {
   const r = $('safe').getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1)
-  const H = Math.max(1280, Math.round((W * r.height) / r.width)), s = Math.min(r.width / W, r.height / H)
+  const H = Math.max(MIN_H, Math.round((W * r.height) / r.width)), s = Math.min(r.width / W, r.height / H)
   const px = (v) => Math.round(v * dpr) / dpr
   Object.assign(view, { dpr, H, s, w: cv.clientWidth, h: cv.clientHeight, ox: px(r.left + (r.width - W * s) / 2), oy: px(r.top + (r.height - H * s) / 2) })
   cv.width = Math.round(view.w * dpr)
