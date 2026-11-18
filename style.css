@@ -22,16 +22,18 @@ html, body {
 /* The wallpaper is the page background, not canvas art: iOS paints the page background edge to edge (behind the
    Dynamic Island, the home bar and Safari's bars), where the canvas doesn't reach. The gradient runs 200px past the
    top and bottom so those strips carry it on; the white dots (5.5px, rows 28px apart) tile everywhere. */
+/* Don't make html taller than the screen to reach the plain strip an iOS Home Screen app shows below the page (as
+   tall as the status bar): iOS still draws nothing there, but lays fixed elements out for the taller page, which
+   pushes the power-up buttons into that strip and cuts them off. */
 html {
-  /* An iOS Home Screen app with a see-through status bar makes the page shorter than the screen by the status bar's
-     height while starting at the very top, so the page stops short of the bottom edge and iOS fills the gap with the
-     plain background colour (no dots). Growing the page by that inset covers it; everywhere else the inset is 0. */
-  min-height: calc(100% + env(safe-area-inset-top));
   background:
     radial-gradient(circle at 14px 14px, rgba(255, 255, 255, 0.5) 5.5px, transparent 6px) 0 0 / 56px 56px,
     radial-gradient(circle at 42px 42px, rgba(255, 255, 255, 0.5) 5.5px, transparent 6px) 0 0 / 56px 56px,
     linear-gradient(#FFE3F0 200px, #F1E6FF 50%, #DCF1FF calc(100% - 200px)) 0 -200px / 100% calc(100% + 400px) no-repeat,
-    #DCF1FF;
+    #FFE3F0;
+  /* That last plain colour is all iOS shows outside the page: Safari 26 tints its top bar (and the area behind its
+     bottom toolbar) with it, ignoring theme-color, and a Home Screen app shows it in the strip below the page. It
+     is the pink at the top of the wallpaper, so the top bar matches; the bottom edge is pink against the blue end. */
 }
 body { font-family: var(--font); color: var(--ink); }
 
