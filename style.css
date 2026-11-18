@@ -23,6 +23,10 @@ html, body {
    Dynamic Island, the home bar and Safari's bars), where the canvas doesn't reach. The gradient runs 200px past the
    top and bottom so those strips carry it on; the white dots (5.5px, rows 28px apart) tile everywhere. */
 html {
+  /* An iOS Home Screen app with a see-through status bar makes the page shorter than the screen by the status bar's
+     height while starting at the very top, so the page stops short of the bottom edge and iOS fills the gap with the
+     plain background colour (no dots). Growing the page by that inset covers it; everywhere else the inset is 0. */
+  min-height: calc(100% + env(safe-area-inset-top));
   background:
     radial-gradient(circle at 14px 14px, rgba(255, 255, 255, 0.5) 5.5px, transparent 6px) 0 0 / 56px 56px,
     radial-gradient(circle at 42px 42px, rgba(255, 255, 255, 0.5) 5.5px, transparent 6px) 0 0 / 56px 56px,
