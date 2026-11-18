@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createGame, tap, useVip, unlockSpot, fillParked, laneCheck, vipAvailable, unlockAvailable, fillAvailable, expire } from '../src/sim.js'
+import { createGame, tap, nextSpot, useVip, unlockSpot, fillParked, laneCheck, vipAvailable, unlockAvailable, fillAvailable, expire } from '../src/sim.js'
 import { SPOTS } from '../src/config.js'
 
 // Rules tests: any seat count, and every bus is 1 unit long so the geometry stays simple.
@@ -42,6 +42,15 @@ test('parking uses the first free open spot, never VIP or locked', () => {
   assert.deepEqual([0, 1, 2, 3].map((id) => tap(game, id)[0].spot), [1, 2, 3, 4])
   assert.deepEqual(game.spots.map((s) => s.bus), [null, 0, 1, 2, 3, null, null, null])
   assert.deepEqual(tap(game, 1), []) // not in the lot
+})
+
+test('the screen can pick the spot: any free open spot, or nothing happens', () => {
+  const { game } = make(row([0, 1, 2]), [])
+  assert.equal(nextSpot(game, (i) => i !== 1), 2) // spot 1 still emptying on screen
+  assert.deepEqual(tap(game, 0, 3), [{ type: 'park', bus: 0, spot: 3 }])
+  for (const spot of [0, 3, 5, -1]) assert.deepEqual(tap(game, 1, spot), []) // VIP, taken, locked, none
+  assert.equal(game.buses[1].state, 'lot')
+  assert.deepEqual(tap(game, 1), [{ type: 'park', bus: 1, spot: 1 }])
 })
 
 test('buses that fill and leave at once still take the next spots in turn', () => {

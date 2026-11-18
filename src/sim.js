@@ -39,19 +39,20 @@ export function createGame(level) {
   return { game, events }
 }
 
-export function tap(game, busId) {
+// spot: which free open spot the bus drives to (game.js picks one that is empty on screen); default nextSpot.
+export function tap(game, busId, spot = nextSpot(game)) {
   const bus = game.buses[busId]
-  if (game.status !== 'playing' || bus?.state !== 'lot') return []
+  if (game.status !== 'playing' || bus?.state !== 'lot' || game.spots[spot]?.type !== 'open' || game.spots[spot].bus !== null) return []
   const lane = laneCheck(game, busId)
   if (!lane.clear) return [{ type: 'bounce', bus: busId, blocker: lane.blocker, free: lane.free }]
-  return arrive(game, bus, nextSpot(game), 'park') // 'playing' guarantees a free open spot
+  return arrive(game, bus, spot, 'park')
 }
 
-// The spot a tapped bus would take, or -1: the free open spot emptied longest ago (unused ones first, left to right),
-// so quick taps spread across the row. game.js only lets a tap through once this spot is empty on screen too.
-export function nextSpot(game) {
+// The free open spot emptied longest ago (unused ones first, left to right), or -1; only spots where usable(i) holds.
+// Quick taps spread across the row. game.js passes usable = "empty on screen too".
+export function nextSpot(game, usable = () => true) {
   let spot = -1
-  game.spots.forEach((s, i) => s.type === 'open' && s.bus === null && (spot < 0 || s.freed < game.spots[spot].freed) && (spot = i))
+  game.spots.forEach((s, i) => s.type === 'open' && s.bus === null && usable(i) && (spot < 0 || s.freed < game.spots[spot].freed) && (spot = i))
   return spot
 }
 

@@ -342,11 +342,11 @@ function onDown(e) {
       hooks.spend(COSTS.vip)
       stuckAt = null // a re-emitted 'stuck' restarts the countdown when it plays
     }
-  } else if (!spotOpen()) {
+  } else if (openSpot() < 0) {
     sfx.buzz()
-    vis[id].wobble = now // its spot is still taken on screen: the bus shakes instead of driving up to wait
+    vis[id].wobble = now // every spot is still taken on screen: the bus shakes instead of driving up to wait
     return
-  } else events = tap(game, id)
+  } else events = tap(game, id, openSpot())
   events[0]?.type === 'bounce' ? sfx.buzz() : sfx.boop() // a bus that can't get out buzzes
   act(events)
 }
@@ -368,9 +368,10 @@ function buyFill() {
   act(fillParked(game))
 }
 
-// The spot the rules would give a tapped bus is empty on screen too. The rules free a spot as soon as its bus fills,
-// before it drives off, and pick spots in their own order, so it can still be emptying while another looks free.
-const spotOpen = () => emptyOnScreen(nextSpot(game))
+// The spot a tapped bus takes: the rules' pick among the spots that are empty on screen too. The rules free a spot as
+// soon as its bus fills, before it drives off, and boardings play out in their own order on screen, so the rules' own
+// pick can still be emptying while another spot is already empty. Once everything has played out the two agree.
+const openSpot = () => nextSpot(game, emptyOnScreen)
 // Spot i is free in the rules and its last bus has started to drive off on screen. A bus never waits for a spot.
 const emptyOnScreen = (i) => i >= 0 && game.spots[i].bus === null && (spotFree[i] || 0) <= now
 
