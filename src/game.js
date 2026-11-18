@@ -38,8 +38,12 @@ window.__bt = { get game() { return game }, get level() { return level }, get jo
 export function init(h) {
   hooks = h
   fit()
-  addEventListener('resize', fit)
-  addEventListener('orientationchange', fit)
+  // Watch the elements whose size follows the screen rather than window resize events: an iOS Home Screen app
+  // launches at full screen height and then shrinks without firing one, which squashed the canvas and left the
+  // power-up buttons below the visible area until the phone was rotated.
+  const watch = new ResizeObserver(() => fit())
+  watch.observe(cv)
+  watch.observe($('safe'))
   cv.addEventListener('pointerdown', onDown)
   $('homeBtn').onclick = () => hooks.home()
   $('restartBtn').onclick = () => start(level.level)
@@ -91,7 +95,11 @@ export function stop() {
 // ---------- layout ----------
 
 function fit() {
-  const r = $('safe').getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1)
+  // Lay out in #safe, but never below the canvas's bottom (100dvh, where the page really ends on screen), in case
+  // fixed elements are still laid out for a taller page than iOS is showing.
+  const sb = $('safe'), b = sb.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1)
+  const bottom = Math.min(b.bottom, cv.getBoundingClientRect().bottom - parseFloat(getComputedStyle(sb).bottom))
+  const r = { left: b.left, top: b.top, width: b.width, height: bottom - b.top }
   const H = Math.max(MIN_H, Math.round((W * r.height) / r.width)), s = Math.min(r.width / W, r.height / H)
   const px = (v) => Math.round(v * dpr) / dpr
   Object.assign(view, { dpr, H, s, w: cv.clientWidth, h: cv.clientHeight, ox: px(r.left + (r.width - W * s) / 2), oy: px(r.top + (r.height - H * s) / 2) })
