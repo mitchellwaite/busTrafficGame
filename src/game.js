@@ -267,10 +267,16 @@ function onDown(e) {
     picking = false
     events = useVip(game, id)
     if (events.length) stuckAt = null // a re-emitted 'stuck' restarts the countdown when it plays
+  } else if (!spotOpen()) {
+    vis[id].wobble = now // every spot is taken on screen: the bus shakes instead of driving off
+    return
   } else events = tap(game, id)
   if (game.status === 'won' && gained === null) gained = hooks.win(level.level)
   play(events)
 }
+
+// An open spot that is empty on screen too. The rules free a spot as soon as its bus fills, before it drives off.
+const spotOpen = () => game.spots.some((s, i) => s.type === 'open' && s.bus === null && (spotFree[i] || 0) <= now)
 
 // Nearest lot bus whose body is within a padding (at least 12 CSS px) of the point; null if none or it is mid-bounce.
 function hit(x, y) {

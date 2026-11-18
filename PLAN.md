@@ -77,6 +77,7 @@ On a wide PC window the portrait board stays centred and the side background fil
 - If the lane is clear, the bus drives out onto the road and into the free open spot that was **emptied longest ago** (never-used spots first, left to right), so quick taps spread along the row instead of queueing for a spot that is still emptying on screen. Normal driving never uses the VIP spot or the locked spots.
 - If another bus is in the lane, the tapped bus drives up to it, bounces off, and returns to where it started. Nothing else changes.
 - Taps on a bus that is mid-bounce are ignored.
+- If no open spot is empty on screen (all taken, or the bus in it has not started driving off yet), the bus only shakes in place. The screen checks this before the rules see the tap, so the rules stay timing-free.
 
 **VIP power-up.**
 1. Tap the **VIP button**. The game enters "pick a bus" mode: lot buses glow and a hint reads "Tap a bus to send it to VIP". Tapping the button again cancels.
