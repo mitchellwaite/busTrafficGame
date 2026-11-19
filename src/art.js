@@ -526,6 +526,7 @@ function stadium(g, x, y, w, h) {
 }
 
 const WALL = ['#A29FB1', '#C9C6D4', '#E8E6EE'], WALL_K = 0.13; // soft grey: outline, base, light stripe; thickness × track
+export const GATE_K = 0.9; // the gate's half-width (to the centre of a post) × track
 
 // The loop: a jelly track walled on both edges, a gold-posted gate in the outer wall at bottom centre
 // (where passengers leave to board), and a walled feeder path per entry in `feeders`
@@ -598,7 +599,7 @@ function loopArt(ctx, rect, track, feeders) {
     });
   }
   // the gate at bottom centre, with gold posts
-  const gx = x + w / 2, gy = y + h, hw = track * 0.45, wy = gy + track / 2 + wall / 2;
+  const gx = x + w / 2, gy = y + h, hw = track * GATE_K, wy = gy + track / 2 + wall / 2;
   ctx.globalCompositeOperation = 'destination-out';
   open(gx, gy, Math.PI / 2, hw, () => ctx.fill());
   ctx.globalCompositeOperation = 'source-over';

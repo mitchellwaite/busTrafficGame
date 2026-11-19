@@ -5,7 +5,7 @@ import { heading } from './geometry.js'
 import { BUS_W, BUS_PAD, COSTS } from './config.js'
 import { generateLevel } from './generator.js'
 import * as sfx from './sound.js'
-import { drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle, drawPrice } from './art.js'
+import { drawLot, drawLoop, loopPoint, drawSpot, drawBus, drawBadge, drawPeep, drawSparkle, drawPrice, GATE_K } from './art.js'
 
 const $ = (id) => document.getElementById(id)
 const cv = $('cv'), ctx = cv.getContext('2d'), overlay = $('overlay'), vipBtn = $('vip'), fillBtn = $('fill')
@@ -23,6 +23,9 @@ const PARK_W = 48, PARK_LEN = { 1: 56, 2: 82, 3: 106 }, BADGE = 64 // parked bus
 const OUT = 0.12, HOP = 0.38, SPARK = 0.6, COUNTDOWN = 10
 const LAP = 5 // seconds per lap of the loop; passengers walk the feeders at the same pace
 const GATE = 0.5, GATE_PT = loopPoint(LOOP, GATE), EXIT_Y = GATE_PT.y + 66 // loop param of the boarding gate (bottom centre)
+// A passenger may step out while it is within GATE_SPAN (loop param) of the gate's centre: anywhere its body stays
+// between the centres of the posts, so it never covers more than half a post.
+const GATE_SPAN = (TRACK * GATE_K - PEEP_R) / (2 * (LOOP.w - LOOP.h) + Math.PI * LOOP.h)
 const spotX = (i) => 66 + 84 * i
 const clamp01 = (u) => Math.min(1, Math.max(0, u))
 const frac = (u) => u - Math.floor(u)
@@ -180,10 +183,12 @@ const armOf = (id) => {
   return id < cap ? id % 2 : +(id >= cap + Math.ceil((game.passengers.length - cap) / 2))
 }
 
-const slotPos = (s) => loopPoint(LOOP, s / game.loop.length + now / LAP)
+const slotPos = (s, t = now) => loopPoint(LOOP, s / game.loop.length + t / LAP)
 const FLY = 0.45, FLY_ARC = 90 // Fill power-up: seconds in the air (plus a stagger), and how high the flight arcs
 // Earliest time >= t0 at which slot s is at loop param `at`.
 const nextAt = (s, at, t0) => t0 + frac(at - s / game.loop.length - t0 / LAP) * LAP
+// Earliest time >= t0 at which slot s is inside the gate.
+const gateAt = (s, t0) => (frac(s / game.loop.length + t0 / LAP - GATE + GATE_SPAN) <= 2 * GATE_SPAN ? t0 : nextAt(s, GATE - GATE_SPAN, t0))
 
 // ---------- events -> timeline ----------
 
@@ -267,13 +272,13 @@ function board(run) {
       const open = [...seats.keys()].filter((id) => seats.get(id) > 0), ready = Math.min(...open.map((id) => vis[id].ready))
       let p = null, t = Infinity
       for (const q of pax) {
-        const tq = nextAt(q.slot, GATE, Math.max(q.join, ready))
+        const tq = gateAt(q.slot, Math.max(q.join, ready))
         if (tq < t) [p, t] = [q, tq]
       }
       const id = open.filter((i) => vis[i].ready <= t).sort((m, n) => vis[m].spot - vis[n].spot)[0]
       seats.set(id, seats.get(id) - 1)
       pax.splice(pax.indexOf(p), 1)
-      p.hop = { t, spot: vis[id].spot, bus: id }
+      p.hop = { t, spot: vis[id].spot, bus: id, x: slotPos(p.slot, t).x } // x: where along the gate it steps out
       free[p.slot] = t
       vis[id].landings.push(t + OUT + HOP)
       end = Math.max(end, t + OUT + HOP)
@@ -590,9 +595,9 @@ function drawPeeps(hopping) {
       continue
     }
     if (hopping) {
-      const e = now - p.hop.t, u = clamp01((e - OUT) / HOP), tx = spotX(p.hop.spot)
-      if (e < OUT) list.push([GATE_PT.x, GATE_PT.y + ((EXIT_Y - GATE_PT.y) * e) / OUT, 1, p.color])
-      else list.push([GATE_PT.x + (tx - GATE_PT.x) * u, EXIT_Y + (SPOT_CY - EXIT_Y) * u - Math.sin(u * Math.PI) * 22, 1 - 0.45 * u, p.color])
+      const e = now - p.hop.t, u = clamp01((e - OUT) / HOP), tx = spotX(p.hop.spot), x0 = p.hop.x
+      if (e < OUT) list.push([x0, GATE_PT.y + ((EXIT_Y - GATE_PT.y) * e) / OUT, 1, p.color])
+      else list.push([x0 + (tx - x0) * u, EXIT_Y + (SPOT_CY - EXIT_Y) * u - Math.sin(u * Math.PI) * 22, 1 - 0.45 * u, p.color])
       continue
     }
     if (now < p.join) continue // still on its arm
