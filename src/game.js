@@ -34,7 +34,7 @@ const MIN_H = 1150
 const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 // now = visual time (drives all animation), clock = play time (drives the stuck countdown), real = last frame's wall time.
 let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0, speed = 1
-let vis, peeps, sparks, timers, free, joinAt, lastJoin, armJoin, armStart, spotFree, lockShake, picking, stuckAt, hint, gained
+let vis, peeps, sparks, timers, joinAt, armStart, spotFree, lockShake, picking, stuckAt, hint, gained
 
 window.__bt = { get game() { return game }, get level() { return level }, get joinAt() { return joinAt }, get vis() { return vis }, get now() { return now } } // for testing
 
@@ -72,10 +72,7 @@ export function start(n) {
   peeps = new Map()
   sparks = []
   timers = []
-  free = game.loop.map(() => 0) // per place on the loop: when it is free to take, Infinity while taken
   joinAt = [] // per passenger: when it steps from its arm onto the loop (or flies off it, for Fill)
-  lastJoin = -Infinity // when the last passenger to enter steps on, overall and per arm
-  armJoin = [-Infinity, -Infinity]
   armStart = [0, 0] // per arm: no passenger before this one is still drawn there
   spotFree = []
   lockShake = [] // per spot: when a tap on it was refused
@@ -176,8 +173,8 @@ const FEEDERS = [rounded(ARM, 40), rounded(ARM.map(([x, y]) => [W - x, y]), 40)]
 const ARMS = FEEDERS.map((pts, i) => ({ pts, len: pathLen(pts), at: i ? 0.25 : 0.75 }))
 // Which arm a passenger queues on (0 left, 1 right); each arm is one continuous line streaming in from off-screen.
 // The first loopful alternates so the loop fills fast from both. After that the left arm holds the first half of the
-// queue and the right arm the rest; passengers step on in queue order, so the left arm is empty before anyone on the
-// right steps on.
+// queue and the right arm the rest; passengers enter the loop in queue order in the rules, so nobody on the right
+// steps on until everyone on the left has entered.
 const armOf = (id) => {
   const cap = game.loop.length
   return id < cap ? id % 2 : +(id >= cap + Math.ceil((game.passengers.length - cap) / 2))
@@ -200,7 +197,7 @@ function play(events) {
       run.push(e)
       continue
     }
-    if (run.length) [end, run] = [Math.max(end, board(run)), []]
+    if (run.length) [end, run] = [Math.max(end, plan(T), board(run)), []]
     const v = vis[e.bus], b = game.buses[e.bus]
     if (e.type === 'bounce') {
       v.bounce = { t: T, d: e.free * cell + 2, dur: 0.09 + 0.05 * e.free }
@@ -228,30 +225,78 @@ function play(events) {
       const land = launch(p, fly.arm.get(e.passenger) ?? ARMS[armOf(e.passenger)].pts[0], e.bus, T, fly.k++)
       v.landings.push(land)
       end = Math.max(end, land)
-    } else if (e.type === 'enter') {
-      // In queue order, once at the front of its arm, a passenger steps onto the first free place on the loop that
-      // passes the arm's end. Places on screen are not the rules' slots: only the count matters to the rules, and a
-      // passenger needs a place only until it boards.
-      const side = armOf(e.passenger), arm = ARMS[side]
-      const ready = Math.max(T, lastJoin, armJoin[side] + STEP + JOIN_T)
-      let slot = -1, join = Infinity
-      free.forEach((f, k) => {
-        const t = f < Infinity ? nextAt(k, arm.at, Math.max(ready, f)) : Infinity
-        if (t < join) [slot, join] = [k, t]
-      })
-      free[slot] = Infinity
-      lastJoin = armJoin[side] = joinAt[e.passenger] = join
-      peeps.set(e.passenger, { color: e.color, slot, join })
-      end = Math.max(end, join)
-    } else if (e.type === 'depart') {
+    } else if (e.type === 'enter') peeps.set(e.passenger, { color: e.color, slot: -1, join: Infinity }) // plan() puts it on the loop
+    else if (e.type === 'depart') {
       const t = Math.max(...v.landings) + 0.15, path = departPath(e.spot)
       v.depart = { t, path, len: pathLen(path), dur: 0.8 }
       spotFree[e.spot] = t + 0.3
       end = Math.max(end, t + 0.8)
-    } else timers.push({ at: Math.max(end, animEnd) + 0.2, type: e.type }) // won | lost | stuck: once every bus, from this tap or earlier ones, has finished
+    } else timers.push({ at: Math.max(end, plan(T), animEnd) + 0.2, type: e.type }) // won | lost | stuck: once every bus, from this tap or earlier ones, has finished
   }
-  if (run.length) end = Math.max(end, board(run))
-  animEnd = Math.max(animEnd, end)
+  if (run.length) end = Math.max(end, plan(T), board(run))
+  animEnd = Math.max(animEnd, end, plan(T)) // last, so places freed by these boardings are taken
+}
+
+// When and where each passenger still waiting on an arm steps onto the loop. Places on screen are not the rules'
+// slots: only the count matters to the rules, and a passenger needs a place only until it boards. Planned afresh
+// after every action, so a place that frees up early goes to the front of a line rather than to whoever entered
+// last. Each arm's line steps on in order; across the two, whichever front can step on first goes first, onto the
+// first place that passes its arm's end empty.
+// One already headed for a bus has its gate time, and its bus's landing and departure, moved to match. Nobody is
+// planned ahead of an earlier passenger already headed for a bus, so such a passenger always finds a place: only
+// passengers not yet headed for a bus hold a place for good, and those planned before it are all on the loop in the
+// rules, where it no longer is, and fitted beside it in the last plan.
+// Returns when the last of it ends.
+function plan(T) {
+  const free = game.loop.map(() => -Infinity), last = [-Infinity, -Infinity], lines = [[], []], bound = [], moved = new Set()
+  let end = T
+  for (const [id, p] of peeps) {
+    if (!p.hop?.from && p.join > T + JOIN_T) lines[armOf(id)].push(id) // not yet stepping on (or flying in, for Fill)
+    else if (p.slot >= 0) free[p.slot] = Math.max(free[p.slot], p.hop ? p.hop.t : Infinity)
+  }
+  for (const line of lines) {
+    line.sort((a, b) => a - b)
+    bound.push(...line.filter((id) => peeps.get(id).hop))
+  }
+  bound.sort((a, b) => b - a) // headed for a bus, still to plan; the earliest last
+  joinAt.forEach((j, id) => j <= T + JOIN_T && (last[armOf(id)] = Math.max(last[armOf(id)], j)))
+  // The front of the line on this arm: the first place it can step onto.
+  const front = (side) => {
+    const ready = Math.max(T + JOIN_T, last[side] + STEP + JOIN_T)
+    let slot = -1, join = Infinity
+    free.forEach((f, k) => {
+      const t = f < Infinity ? nextAt(k, ARMS[side].at, Math.max(ready, f)) : Infinity
+      if (t < join) [slot, join] = [k, t]
+    })
+    return { side, id: lines[side][0], slot, join }
+  }
+  while (lines[0].length || lines[1].length) {
+    const cap = bound.at(-1) ?? Infinity
+    const { side, id, slot, join } = [0, 1].filter((s) => lines[s][0] <= cap).map(front).reduce((a, b) => (b.join < a.join ? b : a))
+    lines[side].shift()
+    if (id === cap) bound.pop()
+    const p = peeps.get(id)
+    p.slot = slot
+    p.join = joinAt[id] = last[side] = join
+    end = Math.max(end, join)
+    if (!p.hop) {
+      free[slot] = Infinity
+      continue
+    }
+    const v = vis[p.hop.bus], i = v.landings.indexOf(p.hop.t + OUT + HOP)
+    p.hop.t = free[slot] = gateAt(slot, Math.max(join, v.ready))
+    p.hop.x = slotPos(slot, p.hop.t).x
+    v.landings[i] = p.hop.t + OUT + HOP
+    moved.add(v)
+  }
+  for (const v of moved) {
+    if (v.depart) {
+      v.depart.t = Math.max(...v.landings) + 0.15
+      spotFree[v.spot] = v.depart.t + 0.3
+    }
+    end = Math.max(end, ...v.landings, v.depart ? v.depart.t + 0.8 : 0)
+  }
+  return end
 }
 
 // A run of boardings. The rules board at once and fix how many seats each bus fills; on screen a passenger
@@ -279,7 +324,6 @@ function board(run) {
       seats.set(id, seats.get(id) - 1)
       pax.splice(pax.indexOf(p), 1)
       p.hop = { t, spot: vis[id].spot, bus: id, x: slotPos(p.slot, t).x } // x: where along the gate it steps out
-      free[p.slot] = t
       vis[id].landings.push(t + OUT + HOP)
       end = Math.max(end, t + OUT + HOP)
     }
@@ -305,7 +349,6 @@ function rush(T) {
   for (const [id, p] of peeps) {
     if (!p.hop || p.hop.t <= T) continue
     const v = vis[p.hop.bus], old = p.hop.t + OUT + HOP
-    if (free[p.slot] === p.hop.t) free[p.slot] = T // its place on the loop frees up now (unless already re-booked)
     let from
     if (T < p.join) {
       from = arm.get(id) ?? ARMS[armOf(id)].pts[0]
