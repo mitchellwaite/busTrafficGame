@@ -411,8 +411,9 @@ const canVip = () => vipAvailable(game) && hooks.balance() >= COSTS.vip && empty
 const canSpot = () => unlockAvailable(game) && hooks.balance() >= COSTS.spot
 const canFill = () => fillAvailable(game) && hooks.balance() >= COSTS.fill
 
-// The Fill button works whenever the player can pay, even with no bus to fill: the coins are spent all the same.
-const fillPayable = () => overlay.hidden && hooks.balance() >= COSTS.fill
+// The Fill button works whenever the player can pay, even with no bus to fill: the coins are spent all the same. Once
+// every bus is accounted for (won in the rules, the last passengers may still be walking) it greys out, like VIP.
+const fillPayable = () => overlay.hidden && (game.status === 'playing' || game.status === 'stuck') && hooks.balance() >= COSTS.fill
 
 function buyFill() {
   if (!fillPayable()) return
