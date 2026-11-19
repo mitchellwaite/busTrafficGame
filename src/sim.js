@@ -12,8 +12,7 @@
  *     spot,       // index into spots while parked, else null
  *     filled,     // passengers on board, 0..size
  *   }],
- *   spots: [{ type, bus, freed }], // type 'vip' | 'open' | 'locked' (unlockSpot opens one); bus = id or null;
- *                // freed = departures so far when it last emptied (0 = never used)
+ *   spots: [{ type, bus }], // type 'vip' | 'open' | 'locked' (unlockSpot opens one); bus = id or null
  *   loop,         // loopCapacity slots, each a passenger id or null
  *   queueIndex,   // next passenger id to enter (ids in skip are passed over)
  *   skip,         // Set of queued passenger ids the Fill power-up already put on a bus
@@ -28,7 +27,7 @@ export function createGame(level) {
     level,
     status: 'playing',
     buses: level.buses.map((b) => ({ ...b, state: 'lot', spot: null, filled: 0 })),
-    spots: level.spots.map((type) => ({ type, bus: null, freed: 0 })),
+    spots: level.spots.map((type) => ({ type, bus: null })),
     loop: Array(level.loopCapacity).fill(null),
     queueIndex: 0,
     skip: new Set(),
@@ -48,12 +47,9 @@ export function tap(game, busId, spot = nextSpot(game)) {
   return arrive(game, bus, spot, 'park')
 }
 
-// The free open spot emptied longest ago (unused ones first, left to right), or -1; only spots where usable(i) holds.
-// Quick taps spread across the row. game.js passes usable = "empty on screen too".
+// The leftmost free open spot, or -1; only spots where usable(i) holds. game.js passes usable = "empty on screen too".
 export function nextSpot(game, usable = () => true) {
-  let spot = -1
-  game.spots.forEach((s, i) => s.type === 'open' && s.bus === null && usable(i) && (spot < 0 || s.freed < game.spots[spot].freed) && (spot = i))
-  return spot
+  return game.spots.findIndex((s, i) => s.type === 'open' && s.bus === null && usable(i))
 }
 
 export function useVip(game, busId) {
@@ -154,7 +150,6 @@ function settle(game, events) {
       events.push({ type: 'depart', bus: b.id, spot: b.spot })
       game.spots[b.spot].bus = null
       b.state = 'gone'
-      game.spots[b.spot].freed = game.buses.filter((x) => x.state === 'gone').length
       b.spot = null
       changed = true
     }

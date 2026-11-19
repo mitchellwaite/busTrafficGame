@@ -33,7 +33,7 @@ const frac = (u) => u - Math.floor(u)
 const MIN_H = 1150
 const view = { s: 1, ox: 0, oy: 0, H: 1280, dpr: 1, w: 0, h: 0 }
 // now = visual time (drives all animation), clock = play time (drives the stuck countdown), real = last frame's wall time.
-let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, animEnd = 0, speed = 1
+let hooks, level = null, game = null, lot, cell, now = 0, clock = 0, real = 0, speed = 1
 let vis, peeps, sparks, timers, joinAt, armStart, spotFree, lockShake, picking, stuckAt, hint, gained
 
 window.__bt = { get game() { return game }, get level() { return level }, get joinAt() { return joinAt }, get vis() { return vis }, get now() { return now } } // for testing
@@ -80,7 +80,6 @@ export function start(n) {
   stuckAt = null
   gained = null
   hint = n === 1
-  animEnd = now
   $('levelLabel').textContent = 'Level ' + n
   overlay.hidden = true
   layout()
@@ -191,13 +190,19 @@ const gateAt = (s, t0) => (frac(s / game.loop.length + t0 / LAP - GATE + GATE_SP
 
 function play(events) {
   const T = now
-  let end = T, run = [], fly = null
+  let run = [], fly = null
+  const flush = () => {
+    if (!run.length) return
+    plan(T) // places for passengers who just entered
+    board(run)
+    run = []
+  }
   for (const e of events) {
     if (e.type === 'board') {
       run.push(e)
       continue
     }
-    if (run.length) [end, run] = [Math.max(end, plan(T), board(run)), []]
+    flush()
     const v = vis[e.bus], b = game.buses[e.bus]
     if (e.type === 'bounce') {
       v.bounce = { t: T, d: e.free * cell + 2, dur: 0.09 + 0.05 * e.free }
@@ -208,13 +213,13 @@ function play(events) {
       // ease-out drive; tHold = when it reaches the road under the spot, where it waits if the spot is still visually busy
       v.move = { t: T, path, len, dur, hold, last, first: pathLen(path.slice(0, 2)), tHold: dur * (1 - Math.sqrt(last / len)) }
       v.spot = e.spot
-      end = Math.max(end, (v.ready = T + dur + hold))
+      v.ready = T + dur + hold
     } else if (e.type === 'teleport') {
       const p = lotPose(b), appear = Math.max(T + 0.3, spotFree[e.spot] || 0)
       v.tp = { t: T, appear, ...p }
       v.spot = e.spot
       sparks.push({ x: p.x, y: p.y, t: T }, { x: spotX(e.spot), y: SPOT_CY, t: appear - 0.1 })
-      end = Math.max(end, (v.ready = appear + 0.25))
+      v.ready = appear + 0.25
     } else if (e.type === 'unlock') sparks.push({ x: spotX(e.spot), y: SPOT_CY, t: T })
     else if (e.type === 'fill') {
       // A queued passenger the Fill power-up put on a bus: it leaves its arm (or off-screen) and flies there.
@@ -222,19 +227,25 @@ function play(events) {
       const p = { color: game.passengers[e.passenger], slot: -1, join: T }
       peeps.set(e.passenger, p)
       joinAt[e.passenger] = T
-      const land = launch(p, fly.arm.get(e.passenger) ?? ARMS[armOf(e.passenger)].pts[0], e.bus, T, fly.k++)
-      v.landings.push(land)
-      end = Math.max(end, land)
+      v.landings.push(launch(p, fly.arm.get(e.passenger) ?? ARMS[armOf(e.passenger)].pts[0], e.bus, T, fly.k++))
     } else if (e.type === 'enter') peeps.set(e.passenger, { color: e.color, slot: -1, join: Infinity }) // plan() puts it on the loop
     else if (e.type === 'depart') {
       const t = Math.max(...v.landings) + 0.15, path = departPath(e.spot)
       v.depart = { t, path, len: pathLen(path), dur: 0.8 }
       spotFree[e.spot] = t + 0.3
-      end = Math.max(end, t + 0.8)
-    } else timers.push({ at: Math.max(end, plan(T), animEnd) + 0.2, type: e.type }) // won | lost | stuck: once every bus, from this tap or earlier ones, has finished
+    } else timers.push(e.type) // won | lost | stuck: handled once everything so far has played out (tick)
   }
-  if (run.length) end = Math.max(end, plan(T), board(run))
-  animEnd = Math.max(animEnd, end, plan(T)) // last, so places freed by these boardings are taken
+  flush()
+  plan(T) // last, so places freed by these boardings are taken
+}
+
+// When everything scheduled so far has played out: each bus in its spot, its passengers landed and, once full, driven
+// off; every passenger let onto the loop stepped on. Fill and plan() move these earlier, so it is worked out afresh.
+function settled() {
+  let t = 0
+  for (const v of vis) t = Math.max(t, v.ready ?? 0, ...v.landings, v.depart ? v.depart.t + v.depart.dur : 0)
+  for (const p of peeps.values()) t = Math.max(t, p.join)
+  return t
 }
 
 // When and where each passenger still waiting on an arm steps onto the loop. Places on screen are not the rules'
@@ -246,10 +257,8 @@ function play(events) {
 // planned ahead of an earlier passenger already headed for a bus, so such a passenger always finds a place: only
 // passengers not yet headed for a bus hold a place for good, and those planned before it are all on the loop in the
 // rules, where it no longer is, and fitted beside it in the last plan.
-// Returns when the last of it ends.
 function plan(T) {
   const free = game.loop.map(() => -Infinity), last = [-Infinity, -Infinity], lines = [[], []], bound = [], moved = new Set()
-  let end = T
   for (const [id, p] of peeps) {
     if (!p.hop?.from && p.join > T + JOIN_T) lines[armOf(id)].push(id) // not yet stepping on (or flying in, for Fill)
     else if (p.slot >= 0) free[p.slot] = Math.max(free[p.slot], p.hop ? p.hop.t : Infinity)
@@ -278,7 +287,6 @@ function plan(T) {
     const p = peeps.get(id)
     p.slot = slot
     p.join = joinAt[id] = last[side] = join
-    end = Math.max(end, join)
     if (!p.hop) {
       free[slot] = Infinity
       continue
@@ -290,20 +298,16 @@ function plan(T) {
     moved.add(v)
   }
   for (const v of moved) {
-    if (v.depart) {
-      v.depart.t = Math.max(...v.landings) + 0.15
-      spotFree[v.spot] = v.depart.t + 0.3
-    }
-    end = Math.max(end, ...v.landings, v.depart ? v.depart.t + 0.8 : 0)
+    if (!v.depart) continue
+    v.depart.t = Math.max(...v.landings) + 0.15
+    spotFree[v.spot] = v.depart.t + 0.3
   }
-  return end
 }
 
 // A run of boardings. The rules board at once and fix how many seats each bus fills; on screen a passenger
 // leaves only through the gate, and whoever reaches it first takes the leftmost bus of its colour that is in
-// its spot with seats left in this run. Returns when the last one lands.
+// its spot with seats left in this run.
 function board(run) {
-  let end = 0
   const groups = new Map()
   for (const e of run) {
     const c = game.buses[e.bus].color
@@ -325,10 +329,8 @@ function board(run) {
       pax.splice(pax.indexOf(p), 1)
       p.hop = { t, spot: vis[id].spot, bus: id, x: slotPos(p.slot, t).x } // x: where along the gate it steps out
       vis[id].landings.push(t + OUT + HOP)
-      end = Math.max(end, t + OUT + HOP)
     }
   }
-  return end
 }
 
 // Fill power-up: passenger p flies from `from` into bus id's spot, landing once the bus is there. k staggers the
@@ -422,9 +424,9 @@ function buyFill() {
   act(events)
 }
 
-// The spot a tapped bus takes: the rules' pick among the spots that are empty on screen too. The rules free a spot as
-// soon as its bus fills, before it drives off, and boardings play out in their own order on screen, so the rules' own
-// pick can still be emptying while another spot is already empty. Once everything has played out the two agree.
+// The spot a tapped bus takes: the leftmost free open spot that is empty on screen too. The rules free a spot as soon
+// as its bus fills, before it drives off, and boardings play out in their own order on screen, so the leftmost free
+// spot can still be emptying while another is already empty. Once everything has played out the two agree.
 const openSpot = () => nextSpot(game, emptyOnScreen)
 // Spot i is free in the rules and its last bus has started to drive off on screen. A bus never waits for a spot.
 const emptyOnScreen = (i) => i >= 0 && game.spots[i].bus === null && (spotFree[i] || 0) <= now
@@ -464,18 +466,19 @@ function frame() {
 }
 
 function tick() {
-  for (const tm of timers) {
-    if (tm.at > now) continue
-    if (tm.type === 'stuck' && game.status === 'stuck') {
-      if (canVip() || canSpot() || canFill()) stuckAt = clock + COUNTDOWN
-      else { // no power-up the player can pay for: a countdown would just be a wait
-        expire(game)
-        showEnd(false)
+  if (timers.length && settled() + 0.2 <= now) {
+    for (const type of timers) {
+      if (type === 'stuck' && game.status === 'stuck') {
+        if (canVip() || canSpot() || canFill()) stuckAt = clock + COUNTDOWN
+        else { // no power-up the player can pay for: a countdown would just be a wait
+          expire(game)
+          showEnd(false)
+        }
       }
+      if (type === 'won' || type === 'lost') showEnd(type === 'won')
     }
-    if (tm.type === 'won' || tm.type === 'lost') showEnd(tm.type === 'won')
+    timers = []
   }
-  timers = timers.filter((tm) => tm.at > now)
   if (game.status !== 'stuck') stuckAt = null
   else if (stuckAt !== null && clock >= stuckAt) {
     expire(game)

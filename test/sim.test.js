@@ -53,9 +53,9 @@ test('the screen can pick the spot: any free open spot, or nothing happens', () 
   assert.deepEqual(tap(game, 1), [{ type: 'park', bus: 1, spot: 1 }])
 })
 
-test('buses that fill and leave at once still take the next spots in turn', () => {
+test('a bus takes the leftmost free spot, even one that just emptied', () => {
   const { game } = make(row([0, 1, 2, 3, 4]), [0, 1, 2, 3, 4].flatMap((c) => rep(c, 10)))
-  assert.deepEqual([0, 1, 2, 3, 4].map((id) => tap(game, id)[0].spot), [1, 2, 3, 4, 1])
+  assert.deepEqual([0, 1, 2, 3, 4].map((id) => tap(game, id)[0].spot), [1, 1, 1, 1, 1])
   assert.equal(game.status, 'won')
 })
 
@@ -79,11 +79,11 @@ test('departing frees the spot; events in causal order', () => {
   assert.ok(ev.slice(1, 11).every((e) => e.bus === 3 && e.spot === 3))
   assert.deepEqual(ev[11], { type: 'depart', bus: 3, spot: 3 })
   assert.deepEqual(game.spots.map((s) => s.bus).slice(0, 5), [null, null, 1, null, null])
-  assert.deepEqual(tap(game, 2), [{ type: 'park', bus: 2, spot: 4 }]) // red B takes never-used spot 4
-  const end = tap(game, 4) // yellow -> spot 3 (emptied before spot 1); then 20 red arrive
+  assert.deepEqual(tap(game, 2), [{ type: 'park', bus: 2, spot: 1 }]) // red B takes the leftmost free spot
+  const end = tap(game, 4) // yellow -> spot 3, now the leftmost free; then 20 red arrive
   assert.equal(end[0].spot, 3)
   const red = end.filter((e) => e.type === 'board' && e.bus !== 4)
-  assert.deepEqual(red.map((e) => e.bus), [...rep(1, 10), ...rep(2, 10)]) // A (spot 2) before B (spot 4)
+  assert.deepEqual(red.map((e) => e.bus), [...rep(2, 10), ...rep(1, 10)]) // B (spot 1) before A (spot 2)
   assert.equal(end.at(-1).type, 'won')
 })
 

@@ -74,10 +74,10 @@ On a wide PC window the portrait board stays centred and the side background fil
 **Lot.** A free-form area measured in units (1 unit = one bus width), with no grid. Each bus has a centre point and a heading in 45° steps, so later levels mix in diagonal buses, and a length set by its size: **a car seats 8 and is 1 unit long, a van 12 and 2 units, a bus 20 and 3 units**. (They are all "buses" to the rules and in the code.) Lots get more units across as the bus count grows, and the screen zooms the lot out to fit.
 
 **Tap a bus.** Its lane is the strip one bus wide straight ahead of its nose. It is blocked by any lot bus whose body reaches into that strip, and it bounces off the nearest one.
-- If the lane is clear, the bus drives out onto the road and into the free open spot that was **emptied longest ago** (never-used spots first, left to right), so quick taps spread along the row. Of those, it only takes one that is empty on screen (below). Normal driving never uses the VIP spot or the locked spots.
+- If the lane is clear, the bus drives out onto the road and into the **leftmost** free open spot, of those that are empty on screen too (below). Normal driving never uses the VIP spot or the locked spots.
 - If another bus is in the lane, the tapped bus drives up to it, bounces off, and returns to where it started. Nothing else changes.
 - Taps on a bus that is mid-bounce are ignored.
-- **A bus never waits for a spot.** A tap only goes through if some free open spot is empty on screen too (the bus in it has started driving off); otherwise the bus buzzes and shakes in place. The bus takes the rules' pick (`nextSpot`) among those spots, which the screen passes to the rules (`tap(game, busId, spot)`). The rules free a spot as soon as its bus fills, but boardings play out in their own order on screen, so when two buses fill at about the same moment they can leave in a different order from the rules': the rules' own pick may still be emptying while another spot is already empty, and the bus takes that one. The rules stay pure (the spot is part of the action), but which spot a quick tap gets can depend on timing, and that decides which same-colour bus is leftmost and so which fills first. A player who waits for buses to drive off always gets the rules' own pick, so the generator's proof that a level is winnable still holds.
+- **A bus never waits for a spot.** A tap only goes through if some free open spot is empty on screen too (the bus in it has started driving off); otherwise the bus buzzes and shakes in place. The bus takes the leftmost of those spots (`nextSpot`), which the screen passes to the rules (`tap(game, busId, spot)`). The rules free a spot as soon as its bus fills, but boardings play out in their own order on screen, so when two buses fill at about the same moment they can leave in a different order from the rules': the leftmost free spot may still be emptying while another spot is already empty, and the bus takes that one. The rules stay pure (the spot is part of the action), but which spot a quick tap gets can depend on timing, and that decides which same-colour bus is leftmost and so which fills first. A player who waits for buses to drive off always gets the leftmost free spot, so the generator's proof that a level is winnable still holds.
 
 **VIP power-up.**
 1. Tap the **VIP button**. The game enters "pick a bus" mode: lot buses glow and a hint reads "Tap a bus to send it to VIP". Tapping the button again cancels.
@@ -127,7 +127,7 @@ A parked bus shows the seats it still has to fill; the number disappears at 0 an
 // src/sim.js (pure, no DOM)
 createGame(level) → { game, events }       // events = initial loop fill
 tap(game, busId, spot = nextSpot(game)) → events[] // spot: a free open spot; no-op [] otherwise
-nextSpot(game, usable = () => true) → spot | -1  // free open spot emptied longest ago, among those usable(i)
+nextSpot(game, usable = () => true) → spot | -1  // leftmost free open spot, among those usable(i)
 useVip(game, busId) → events[]             // no-op [] unless VIP spot empty and bus in lot
 unlockSpot(game, spot) → events[]          // opens that spot; no-op [] unless it is locked
 fillParked(game)    → events[]             // fills every parked bus from the queue; no-op [] if none is waiting
@@ -310,6 +310,7 @@ All settled:
 - Seats and lengths: car 8, van 12, bus 20 seats = 1/2/3 units, on a free-form lot that zooms to fit.
 - Colour-blind symbols: off. Colour alone, with bright, well-separated colours.
 - Loop: 30 on screen, fed by two arms that show the upcoming queue.
+- Parking: a tapped bus takes the leftmost free spot (it used to take the one emptied longest ago; switching moved the lots of levels 45, 62, 153, 195 and 299).
 - Power-ups: VIP 25 coins per use; unlocking a spot 50 coins (tap the locked spot), for the current level only; Fill 75 coins.
 - Coins: 50, first completion of a level only.
 - Out of space: a 10 s countdown to use a power-up; game over at once if none is affordable.
